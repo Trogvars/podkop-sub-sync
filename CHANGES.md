@@ -1,5 +1,24 @@
 # CHANGES
 
+## 2.2.1
+
+### Fixed
+
+- Low-memory precheck no longer restarts Podkop immediately after a successful
+  proxy test only for the updater to restart it again a few seconds later.
+- When called by the updater, successful precheck can leave Podkop stopped until
+  the final proxy list has been written.
+- If the tested proxy set is unchanged, the updater restores Podkop before
+  exiting.
+- Any precheck failure still restores the original Podkop service through the
+  existing cleanup path.
+- Final apply now performs a single Podkop start when precheck intentionally
+  left it stopped, reducing service churn and avoiding transient `ubus service
+  delete ... Not found` / `sort: Broken pipe` noise caused by back-to-back
+  start/restart cycles.
+
+---
+
 ## 2.2.0
 
 ### Interactive installer

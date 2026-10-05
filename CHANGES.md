@@ -1,5 +1,29 @@
 # CHANGES
 
+## 2.1.0
+
+### Changed
+
+- XHTTP is now configured like the other selectable proxy types:
+  `option enable_xhttp '0|1'`.
+- Startup protocol reporting includes XHTTP, for example:
+  `Enabled protocols: vless|trojan|ss|xhttp`.
+- XHTTP selection is logically independent from ordinary VLESS. It is valid to
+  use `enable_vless='0'` together with `enable_xhttp='1'`; only VLESS links
+  using `type=xhttp` are retained.
+- XHTTP dependency auto-repair is triggered by `enable_xhttp='1'`.
+
+### Migration
+
+- Existing `allow_xhttp` is automatically migrated to `enable_xhttp` during
+  installation/update and the legacy option is removed.
+- Runtime still understands `allow_xhttp` as a compatibility fallback until
+  the installer migration has been run.
+- New installer option: `--enable-xhttp`.
+- Existing `--with-xhttp` remains as a compatibility alias.
+
+---
+
 ## 2.0.4
 
 ### Fixed

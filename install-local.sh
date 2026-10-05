@@ -26,7 +26,8 @@ Usage: install-local.sh [options]
   --max-nodes N    Keep only N fastest working nodes after precheck (0 = unlimited)
   --include CC     Keep only this country; repeatable: --include RU --include KZ
   --exclude CC     Exclude country; repeatable: --exclude RU --exclude UZ
-  --with-xhttp     Enable XHTTP and automatically install/check its dependencies
+  --enable-xhttp   Enable XHTTP and automatically install/check its dependencies
+  --with-xhttp     Legacy alias for --enable-xhttp
   --no-start       Install and enable, but do not start now
   -h, --help       Show this help
 EOF
@@ -66,7 +67,7 @@ while [ "$#" -gt 0 ]; do
             EXCLUDES="${EXCLUDES}${EXCLUDES:+ }$2"
             shift 2
             ;;
-        --with-xhttp)
+        --enable-xhttp|--with-xhttp)
             WITH_XHTTP=1
             shift
             ;;
@@ -258,6 +259,7 @@ if [ -r "$LOCK/pid" ]; then
 fi
 
 NEED_XHTTP="$WITH_XHTTP"
+[ "$(uci -q get podkop-sub-sync.main.enable_xhttp 2>/dev/null || echo 0)" = 1 ] && NEED_XHTTP=1
 [ "$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || echo 0)" = 1 ] && NEED_XHTTP=1
 
 if [ "$NEED_XHTTP" = 1 ]; then
@@ -308,7 +310,7 @@ if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main.interval='86400'
     uci set podkop-sub-sync.main.retry_interval='900'
     uci set podkop-sub-sync.main.send_hwid='0'
-    uci set podkop-sub-sync.main.allow_xhttp='0'
+    uci set podkop-sub-sync.main.enable_xhttp='0'
     uci set podkop-sub-sync.main.enable_vless='1'
     uci set podkop-sub-sync.main.enable_trojan='1'
     uci set podkop-sub-sync.main.enable_ss='1'
@@ -323,6 +325,18 @@ if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main.precheck_min_percent='20'
     uci set podkop-sub-sync.main.precheck_max_nodes='20'
     uci set podkop-sub-sync.main.precheck_insecure_tls='0'
+fi
+
+LEGACY_XHTTP="$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || true)"
+CURRENT_XHTTP="$(uci -q get podkop-sub-sync.main.enable_xhttp 2>/dev/null || true)"
+
+if [ -z "$CURRENT_XHTTP" ] && [ -n "$LEGACY_XHTTP" ]; then
+    echo "Migrating allow_xhttp to enable_xhttp"
+    uci set "podkop-sub-sync.main.enable_xhttp=${LEGACY_XHTTP}"
+fi
+
+if [ -n "$LEGACY_XHTTP" ]; then
+    uci -q delete podkop-sub-sync.main.allow_xhttp || true
 fi
 
 LEGACY_USER_AGENT="$(uci -q get podkop-sub-sync.main.user_agent 2>/dev/null || true)"
@@ -368,7 +382,7 @@ if [ -n "$EXCLUDES" ]; then
     done
 fi
 
-[ "$WITH_XHTTP" = 1 ] && uci set podkop-sub-sync.main.allow_xhttp='1'
+[ "$WITH_XHTTP" = 1 ] && uci set podkop-sub-sync.main.enable_xhttp='1'
 
 uci commit podkop-sub-sync
 

@@ -49,8 +49,14 @@ singbox_running(){
 
 LOCK_HELD=0
 TMP=""
+PODKOP_DEFERRED_STOP=0
 
 cleanup(){
+    if [ "$PODKOP_DEFERRED_STOP" = 1 ]; then
+        /etc/init.d/podkop start >/dev/null 2>&1 || true
+        PODKOP_DEFERRED_STOP=0
+    fi
+
     [ -n "$TMP" ] && rm -rf "$TMP"
     if [ "$LOCK_HELD" = 1 ]; then
         rm -rf "$LOCK"
@@ -335,13 +341,23 @@ if [ "$PRECHECK_ENABLED" = 1 ]; then
     log "Running real proxy availability precheck..."
     PRECHECKED="$TMP/proxies.prechecked"
 
-    /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
+    PRECHECK_STOPPED_MARKER="$TMP/precheck-podkop-stopped"
+    rm -f "$PRECHECK_STOPPED_MARKER"
+
+    PSS_PRECHECK_DEFER_RESTORE=1 \
+    PSS_PRECHECK_STOPPED_MARKER="$PRECHECK_STOPPED_MARKER" \
+        /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
     RC=$?
 
     [ "$RC" -eq 0 ] || {
         log "ERROR: proxy precheck failed (code $RC); current config unchanged"
         exit 4
     }
+
+    if [ -e "$PRECHECK_STOPPED_MARKER" ]; then
+        PODKOP_DEFERRED_STOP=1
+        log "Podkop remains stopped until final proxy list is applied"
+    fi
 
     [ -s "$PRECHECKED" ] || {
         log "ERROR: proxy precheck returned an empty list"
@@ -372,6 +388,16 @@ fi
 HASH="$(sha256sum "$LIST" | awk '{print $1}')"
 if [ -r "$STATE" ] && [ "$HASH" = "$(cat "$STATE")" ]; then
     log "Working proxy list unchanged ($COUNT proxies)"
+
+    if [ "$PODKOP_DEFERRED_STOP" = 1 ]; then
+        log "Restoring Podkop; no configuration change is required"
+        /etc/init.d/podkop start >/dev/null 2>&1 || {
+            log "ERROR: failed to restore Podkop after unchanged precheck"
+            exit 5
+        }
+        PODKOP_DEFERRED_STOP=0
+    fi
+
     exit 0
 fi
 
@@ -387,6 +413,7 @@ rollback(){
     log "ERROR: new config failed; restoring backup"
     cp "$BACKUP" /etc/config/podkop
     /etc/init.d/podkop restart >/dev/null 2>&1 || true
+    PODKOP_DEFERRED_STOP=0
     exit 5
 }
 
@@ -404,8 +431,13 @@ done <"$LIST"
 uci commit podkop || rollback
 
 log "Written $ADDED proxy links to Podkop"
-log "Restarting Podkop..."
-/etc/init.d/podkop restart || rollback
+log "Starting Podkop with updated proxy list..."
+if [ "$PODKOP_DEFERRED_STOP" = 1 ]; then
+    /etc/init.d/podkop start || rollback
+    PODKOP_DEFERRED_STOP=0
+else
+    /etc/init.d/podkop restart || rollback
+fi
 
 SINGCONF="$(uci -q get podkop.settings.config_path 2>/dev/null || true)"
 [ -n "$SINGCONF" ] || SINGCONF="/etc/sing-box/config.json"

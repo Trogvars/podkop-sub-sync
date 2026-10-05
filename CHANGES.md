@@ -1,5 +1,21 @@
 # CHANGES
 
+## 2.0.3
+
+### Fixed
+
+- Compressed SBE production process detection now checks both `sing-box` and
+  `sing-box-core`. The compressed wrapper executes the real core under the
+  latter process name, which prevented the 2.0.2 low-memory mode from
+  activating.
+- Temporary precheck sing-box readiness no longer uses a fixed `sleep 1`.
+- Precheck now waits up to 20 seconds for the first mixed inbound to actually
+  enter TCP LISTEN state via `/proc/net/tcp{,6}` before testing proxies.
+- This prevents false `curl rc=7 / HTTP=000` failures on UPX-compressed builds
+  that take several seconds to decompress/start.
+
+---
+
 ## 2.0.2
 
 ### Fixed

@@ -107,7 +107,8 @@ URL="$(cfg_get url '')"
 TARGET="$(cfg_get target main)"
 SEND_HWID="$(cfg_get send_hwid 0)"
 HWID="$(cfg_get hwid '')"
-ALLOW_XHTTP="$(cfg_get allow_xhttp 0)"
+ENABLE_XHTTP="$(cfg_get enable_xhttp '')"
+[ -n "$ENABLE_XHTTP" ] || ENABLE_XHTTP="$(cfg_get allow_xhttp 0)"
 ENABLE_VLESS="$(cfg_get enable_vless 1)"
 ENABLE_TROJAN="$(cfg_get enable_trojan 1)"
 ENABLE_SS="$(cfg_get enable_ss 1)"
@@ -117,7 +118,7 @@ EXCLUDE_COUNTRIES="$(uci -q get "${CFG}.${SEC}.exclude_country" 2>/dev/null || t
 UA="$(cfg_get user_agent '')"
 [ -n "$UA" ] || UA="podkop-sub-sync/$(pss_version)"
 
-if [ "$ALLOW_XHTTP" = 1 ]; then
+if [ "$ENABLE_XHTTP" = 1 ]; then
     pss_ensure_xhttp_stack || exit 4
 fi
 
@@ -127,17 +128,51 @@ uci -q get "podkop.${TARGET}" >/dev/null 2>&1 || {
     exit 2
 }
 
-PROTO_RE=""
-[ "$ENABLE_VLESS" = 1 ] && PROTO_RE="vless"
+append_protocol(){
+    if [ -n "$ENABLED_PROTOCOLS" ]; then
+        ENABLED_PROTOCOLS="${ENABLED_PROTOCOLS}|$1"
+    else
+        ENABLED_PROTOCOLS="$1"
+    fi
+}
+
+append_scheme(){
+    case "|${SCHEME_RE}|" in
+        *"|$1|"*) return 0 ;;
+    esac
+
+    if [ -n "$SCHEME_RE" ]; then
+        SCHEME_RE="${SCHEME_RE}|$1"
+    else
+        SCHEME_RE="$1"
+    fi
+}
+
+ENABLED_PROTOCOLS=""
+SCHEME_RE=""
+
+if [ "$ENABLE_VLESS" = 1 ]; then
+    append_protocol vless
+    append_scheme vless
+fi
 if [ "$ENABLE_TROJAN" = 1 ]; then
-    [ -n "$PROTO_RE" ] && PROTO_RE="${PROTO_RE}|trojan" || PROTO_RE="trojan"
+    append_protocol trojan
+    append_scheme trojan
 fi
 if [ "$ENABLE_SS" = 1 ]; then
-    [ -n "$PROTO_RE" ] && PROTO_RE="${PROTO_RE}|ss" || PROTO_RE="ss"
+    append_protocol ss
+    append_scheme ss
 fi
-[ -n "$PROTO_RE" ] || { log "ERROR: all protocols disabled"; exit 2; }
+if [ "$ENABLE_XHTTP" = 1 ]; then
+    append_protocol xhttp
+    # XHTTP is currently represented by VLESS links with type=xhttp, but is
+    # independently selectable from ordinary VLESS.
+    append_scheme vless
+fi
 
-log "Enabled protocols: $PROTO_RE"
+[ -n "$ENABLED_PROTOCOLS" ] || { log "ERROR: all protocols disabled"; exit 2; }
+
+log "Enabled protocols: $ENABLED_PROTOCOLS"
 
 if [ "$SEND_HWID" = 1 ] && [ -z "$HWID" ]; then
     if [ -r /sys/class/net/br-lan/address ]; then
@@ -203,24 +238,36 @@ if ! grep -Eq '(vless|trojan|ss)://' "$PAYLOAD"; then
 fi
 
 LIST="$TMP/proxies.list"
-grep -Eo "(${PROTO_RE})://[^[:space:]]+" "$TEXT" |
+grep -Eo "(${SCHEME_RE})://[^[:space:]]+" "$TEXT" |
     sed 's/\r$//' |
     sort -u >"$LIST"
+
+XHTTP_RE='([?&])type=xhttp([&#]|$)'
+
+if [ "$ENABLE_XHTTP" != 1 ]; then
+    F="$TMP/xhttp-disabled.filtered"
+    grep -Eiv "$XHTTP_RE" "$LIST" >"$F" || true
+    mv "$F" "$LIST"
+fi
+
+if [ "$ENABLE_VLESS" != 1 ] && [ "$ENABLE_XHTTP" = 1 ]; then
+    F="$TMP/xhttp-only-vless.filtered"
+    {
+        grep -Eiv '^vless://' "$LIST" || true
+        grep -Ei "^vless://.*${XHTTP_RE}" "$LIST" || true
+    } | sort -u >"$F"
+    mv "$F" "$LIST"
+fi
 
 COUNT="$(wc -l <"$LIST" | tr -d ' ')"
 [ "$COUNT" -gt 0 ] || {
     log "ERROR: no supported proxies found after protocol filter"
     exit 4
 }
-log "Found $COUNT proxies after protocol filter"
 
-XHTTP="$(grep -Eic '([?&])type=xhttp([&#]|$)' "$LIST" 2>/dev/null || true)"
-if [ "$XHTTP" -gt 0 ] && [ "$ALLOW_XHTTP" != 1 ]; then
-    log "Found $XHTTP XHTTP proxies; filtering them"
-    F="$TMP/xhttp.filtered"
-    grep -Eiv '([?&])type=xhttp([&#]|$)' "$LIST" >"$F" || true
-    mv "$F" "$LIST"
-fi
+SELECTED_XHTTP="$(grep -Eic "$XHTTP_RE" "$LIST" 2>/dev/null || true)"
+log "Found $COUNT proxies after protocol filter"
+[ "$ENABLE_XHTTP" = 1 ] && log "XHTTP proxies selected: $SELECTED_XHTTP"
 
 if [ -n "$INCLUDE_COUNTRIES" ]; then
     BEFORE="$(wc -l <"$LIST" | tr -d ' ')"

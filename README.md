@@ -33,7 +33,8 @@ Useful installer arguments:
 --max-nodes N
 --include CC
 --exclude CC
---with-xhttp
+--enable-xhttp
+--with-xhttp     # legacy alias
 --no-start
 ```
 
@@ -48,7 +49,7 @@ wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/instal
       --interval 86400 \
       --max-nodes 20 \
       --exclude RU \
-      --with-xhttp
+      --enable-xhttp
 ```
 
 ## What it does
@@ -114,7 +115,7 @@ config sync 'main'
         option retry_interval '900'
 
         option send_hwid '0'
-        option allow_xhttp '0'
+        option enable_xhttp '0'
 
         option enable_vless '1'
         option enable_trojan '1'
@@ -188,17 +189,34 @@ not cause unnecessary Podkop restarts.
 
 ### XHTTP
 
+`--with-xhttp` remains supported as a legacy alias for `--enable-xhttp`.
+
 Set:
 
 ```text
-option allow_xhttp '1'
+option enable_xhttp '1'
 ```
 
 or install/update with:
 
 ```sh
---with-xhttp
+--enable-xhttp
 ```
+
+XHTTP is a selectable protocol toggle, just like VLESS/Trojan/SS:
+
+```text
+option enable_xhttp '1'
+```
+
+It is independent from ordinary VLESS. For example:
+
+```text
+option enable_vless '0'
+option enable_xhttp '1'
+```
+
+keeps XHTTP VLESS links while filtering ordinary VLESS links.
 
 If XHTTP is enabled, the project automatically checks and repairs:
 
@@ -323,7 +341,7 @@ The installer:
 - stops the old sync service and refuses to replace files while an active sync still owns the updater lock;
 - preserves `/etc/config/podkop-sub-sync`;
 - installs the unified runtime;
-- re-checks XHTTP dependencies when `allow_xhttp=1`;
+- re-checks XHTTP dependencies when `enable_xhttp=1`;
 - validates shell syntax;
 - starts the service again when enabled and configured.
 

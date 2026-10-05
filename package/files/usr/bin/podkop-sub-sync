@@ -495,7 +495,26 @@ while ! singbox_running; do
 done
 
 log "sing-box process is running"
-sing-box check -c "$SINGCONF" >/dev/null 2>&1 || rollback
+
+# The configuration was already validated above before this point. Running a
+# second "sing-box check" here is especially expensive with the UPX-compressed
+# SBE build because it starts another decompressed sing-box-core alongside the
+# production process. On ~256 MiB routers that can trigger the OOM killer.
+#
+# Instead, give the production process a short stability window and verify that
+# it remains alive without spawning another sing-box instance.
+STABLE_WAIT=0
+while [ "$STABLE_WAIT" -lt 5 ]; do
+    sleep 1
+    STABLE_WAIT=$((STABLE_WAIT + 1))
+
+    if ! singbox_running; then
+        log "ERROR: sing-box process exited during post-start stability check"
+        rollback
+    fi
+done
+
+log "sing-box process remained stable for ${STABLE_WAIT}s"
 printf '%s\n' "$HASH" >"$STATE" || log "WARN: could not write state hash to $STATE"
 log "Update successful: $COUNT proxies"
 exit 0

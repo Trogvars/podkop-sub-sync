@@ -325,6 +325,14 @@ if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main.precheck_insecure_tls='0'
 fi
 
+LEGACY_USER_AGENT="$(uci -q get podkop-sub-sync.main.user_agent 2>/dev/null || true)"
+case "$LEGACY_USER_AGENT" in
+    podkop-sub-sync-openwrt24/*|podkop-sub-sync/1.*)
+        echo "Migrating generated legacy user_agent to dynamic versioned default"
+        uci -q delete podkop-sub-sync.main.user_agent || true
+        ;;
+esac
+
 uci -q get podkop-sub-sync.main.retry_interval >/dev/null 2>&1 ||
     uci set podkop-sub-sync.main.retry_interval='900'
 

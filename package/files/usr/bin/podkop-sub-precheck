@@ -140,6 +140,22 @@ stop_test_singbox(){
     TEST_PID=""
 }
 
+PODKOP_STOPPED=0
+
+restart_podkop_if_stopped(){
+    [ "$PODKOP_STOPPED" = 1 ] || return 0
+
+    log "Restoring Podkop after low-memory precheck"
+    if /etc/init.d/podkop start >/dev/null 2>&1; then
+        PODKOP_STOPPED=0
+        sleep 2
+        return 0
+    fi
+
+    log "ERROR: failed to restart Podkop after low-memory precheck"
+    return 1
+}
+
 TMP="$(mktemp -d /tmp/podkop-precheck.XXXXXX)" || die "cannot create temp dir"
 TEST_PID=""
 RANKED="$TMP/working-ranked.tsv"
@@ -147,6 +163,7 @@ RANKED="$TMP/working-ranked.tsv"
 
 cleanup(){
     stop_test_singbox
+    restart_podkop_if_stopped >/dev/null 2>&1 || true
     rm -rf "$TMP"
 }
 trap cleanup EXIT INT TERM
@@ -166,6 +183,49 @@ if ! http_code_ok "$CONTROL_CODE"; then
 fi
 
 log "Control URL is available (HTTP $CONTROL_CODE)"
+
+SBE_VERSION_INFO="$(sing-box version 2>/dev/null || true)"
+MEM_TOTAL_KB="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
+case "$MEM_TOTAL_KB" in
+    ''|*[!0-9]*) MEM_TOTAL_KB=0 ;;
+esac
+
+if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
+   [ "$MEM_TOTAL_KB" -gt 0 ] &&
+   [ "$MEM_TOTAL_KB" -lt 393216 ] &&
+   pidof sing-box >/dev/null 2>&1 &&
+   [ -x /etc/init.d/podkop ]; then
+
+    MEM_TOTAL_MB=$((MEM_TOTAL_KB / 1024))
+    log "Low-memory compressed SBE detected (${MEM_TOTAL_MB} MiB RAM)"
+    log "Temporarily stopping Podkop during proxy precheck to avoid OOM"
+
+    /etc/init.d/podkop stop >/dev/null 2>&1 || {
+        log "ERROR: failed to stop Podkop for low-memory precheck"
+        exit 13
+    }
+    PODKOP_STOPPED=1
+    sleep 2
+
+    if pidof sing-box >/dev/null 2>&1; then
+        log "ERROR: sing-box is still running after Podkop stop"
+        exit 13
+    fi
+
+    DIRECT_CODE="$(curl $CURL_TLS_OPT -sS \
+        --connect-timeout "$CONNECT_TIMEOUT" \
+        --max-time "$TIMEOUT" \
+        -o /dev/null \
+        -w '%{http_code}' \
+        "$TEST_URL" 2>/dev/null)"
+
+    if ! http_code_ok "$DIRECT_CODE"; then
+        log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
+        exit 13
+    fi
+
+    log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
+fi
 
 TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
 [ "$TOTAL" -gt 0 ] || die "no proxies to test"
@@ -250,7 +310,13 @@ while [ "$START" -le "$TOTAL" ]; do
     CHECK="$(sing-box check -c "$CONF" 2>&1)"
     CHECK_RC=$?
     if [ "$CHECK_RC" -ne 0 ]; then
-        log "ERROR: temporary config failed validation: $CHECK"
+        if [ "$CHECK_RC" -eq 137 ]; then
+            MEM_AVAIL_KB="$(awk '/MemAvailable/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
+            case "$MEM_AVAIL_KB" in ''|*[!0-9]*) MEM_AVAIL_KB=0 ;; esac
+            log "ERROR: sing-box check was killed (rc=137, likely OOM; MemAvailable=$((MEM_AVAIL_KB / 1024)) MiB)"
+        else
+            log "ERROR: temporary config failed validation (rc=$CHECK_RC): $CHECK"
+        fi
         cp "$CONF" /tmp/podkop-precheck-broken.json
         exit 11
     fi
@@ -297,6 +363,10 @@ while [ "$START" -le "$TOTAL" ]; do
     stop_test_singbox
     START=$((END + 1))
 done
+
+if ! restart_podkop_if_stopped; then
+    exit 22
+fi
 
 PERCENT=$((GOOD * 100 / TOTAL))
 REQUIRED_NODES="$MIN_NODES"

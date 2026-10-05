@@ -206,8 +206,13 @@ If XHTTP is enabled, the project automatically checks and repairs:
 2. the Podkop `xhttp)` parser patch
 
 The helper scripts are pinned to reviewed Git commits. The pinned SBE installer
-selects the newest stable SBE release and its recommended format for the
-router.
+selects the newest stable SBE release.
+
+Format selection is intentionally platform-specific:
+
+- OpenWrt 24.x / `opkg`: compressed SBE build is selected explicitly to avoid
+  tmpfs/flash exhaustion while unpacking the much larger normal build.
+- OpenWrt 25.x / `apk`: the upstream recommended APK/default is used.
 
 Current pinned helpers:
 

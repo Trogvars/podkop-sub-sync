@@ -115,11 +115,11 @@ config sync 'main'
         option retry_interval '900'
 
         option send_hwid '0'
-        option enable_xhttp '0'
 
         option enable_vless '1'
         option enable_trojan '1'
         option enable_ss '1'
+        option enable_xhttp '0'
 
         # list include_country 'RU'
         # list include_country 'KZ'
@@ -191,22 +191,16 @@ not cause unnecessary Podkop restarts.
 
 `--with-xhttp` remains supported as a legacy alias for `--enable-xhttp`.
 
-Set:
-
-```text
-option enable_xhttp '1'
-```
-
-or install/update with:
-
-```sh
---enable-xhttp
-```
-
 XHTTP is a selectable protocol toggle, just like VLESS/Trojan/SS:
 
 ```text
 option enable_xhttp '1'
+```
+
+or enable it during install/update with:
+
+```sh
+--enable-xhttp
 ```
 
 It is independent from ordinary VLESS. For example:

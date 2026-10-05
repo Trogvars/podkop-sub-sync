@@ -183,6 +183,219 @@ command -v sing-box >/dev/null 2>&1 || { echo "ERROR: sing-box not found"; exit 
 echo "[podkop-sub-sync] Version: $VERSION"
 echo "[podkop-sub-sync] Detected OpenWrt $OPENWRT_VERSION -> $FAMILY"
 
+command -v uci >/dev/null 2>&1 || {
+    echo "ERROR: uci command not found"
+    exit 1
+}
+
+if [ "$INTERACTIVE" = 1 ] && { [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; }; then
+    echo "[podkop-sub-sync] No interactive TTY; using current/default values"
+    INTERACTIVE=0
+fi
+
+prompt_line(){
+    prompt_text="$1"
+    printf '%s' "$prompt_text" >/dev/tty
+    IFS= read -r prompt_answer </dev/tty || prompt_answer=""
+    printf '%s\n' "$prompt_answer"
+}
+
+prompt_yes_no(){
+    prompt_text="$1"
+    prompt_default="$2"
+
+    if [ "$prompt_default" = 1 ]; then
+        prompt_suffix="[Y/n]"
+    else
+        prompt_suffix="[y/N]"
+    fi
+
+    while :; do
+        answer="$(prompt_line "$prompt_text $prompt_suffix: ")"
+        [ -n "$answer" ] || {
+            printf '%s\n' "$prompt_default"
+            return 0
+        }
+
+        case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
+            y|yes|д|да)
+                printf '1\n'
+                return 0
+                ;;
+            n|no|н|нет)
+                printf '0\n'
+                return 0
+                ;;
+            *)
+                printf 'Please answer y or n.\n' >/dev/tty
+                ;;
+        esac
+    done
+}
+
+normalize_country_list(){
+    printf '%s\n' "$1" | tr ',;' '  ' | tr '[:lower:]' '[:upper:]'
+}
+
+EXISTING_SYNC=0
+if uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
+    EXISTING_SYNC=1
+fi
+
+CURRENT_URL="$(uci -q get podkop-sub-sync.main.url 2>/dev/null || true)"
+CURRENT_INTERVAL="$(uci -q get podkop-sub-sync.main.interval 2>/dev/null || true)"
+CURRENT_MAX_NODES="$(uci -q get podkop-sub-sync.main.precheck_max_nodes 2>/dev/null || true)"
+CURRENT_EXCLUDES="$(uci -q get podkop-sub-sync.main.exclude_country 2>/dev/null || true)"
+CURRENT_XHTTP="$(uci -q get podkop-sub-sync.main.enable_xhttp 2>/dev/null || true)"
+[ -n "$CURRENT_XHTTP" ] || CURRENT_XHTTP="$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || true)"
+
+[ -n "$CURRENT_INTERVAL" ] || CURRENT_INTERVAL='86400'
+[ -n "$CURRENT_MAX_NODES" ] || CURRENT_MAX_NODES='20'
+[ -n "$CURRENT_XHTTP" ] || CURRENT_XHTTP='0'
+
+if [ "$EXISTING_SYNC" = 0 ]; then
+    [ "$EXCLUDES_SET" = 1 ] || {
+        EXCLUDES='RU'
+        EXCLUDES_SET=1
+    }
+fi
+
+if [ "$INTERACTIVE" = 1 ]; then
+    echo
+    echo "========================================"
+    echo "  Podkop Subscription Sync setup"
+    echo "========================================"
+
+    if [ "$XHTTP_SET" = 0 ]; then
+        XHTTP_VALUE="$(prompt_yes_no "Enable XHTTP and install sing-box-extended?" "$CURRENT_XHTTP")"
+        XHTTP_SET=1
+    fi
+
+    if [ "$SUB_URL_SET" = 0 ]; then
+        if [ -n "$CURRENT_URL" ]; then
+            answer="$(prompt_line "Subscription URL [Enter = keep current, - = clear]: ")"
+            case "$answer" in
+                '')
+                    ;;
+                -)
+                    SUB_URL=""
+                    SUB_URL_SET=1
+                    ;;
+                *)
+                    SUB_URL="$answer"
+                    SUB_URL_SET=1
+                    ;;
+            esac
+        else
+            answer="$(prompt_line "Subscription URL [Enter = skip]: ")"
+            if [ -n "$answer" ]; then
+                SUB_URL="$answer"
+                SUB_URL_SET=1
+            fi
+        fi
+    fi
+
+    if [ "$EXCLUDES_SET" = 0 ]; then
+        if [ "$EXISTING_SYNC" = 1 ]; then
+            if [ -n "$CURRENT_EXCLUDES" ]; then
+                exclude_default="$CURRENT_EXCLUDES"
+            else
+                exclude_default="-"
+            fi
+        else
+            exclude_default="RU"
+        fi
+
+        answer="$(prompt_line "Exclude country/countries [$exclude_default] (- = none): ")"
+        [ -n "$answer" ] || answer="$exclude_default"
+
+        if [ "$answer" = "-" ]; then
+            EXCLUDES=""
+        else
+            EXCLUDES="$(normalize_country_list "$answer")"
+        fi
+        EXCLUDES_SET=1
+    fi
+
+    if [ "$INTERVAL_SET" = 0 ]; then
+        answer="$(prompt_line "Sync interval in seconds [$CURRENT_INTERVAL]: ")"
+        [ -n "$answer" ] || answer="$CURRENT_INTERVAL"
+        INTERVAL="$answer"
+        INTERVAL_SET=1
+    fi
+
+    if [ "$MAX_NODES_SET" = 0 ]; then
+        answer="$(prompt_line "Maximum fastest nodes [$CURRENT_MAX_NODES]: ")"
+        [ -n "$answer" ] || answer="$CURRENT_MAX_NODES"
+        MAX_NODES="$answer"
+        MAX_NODES_SET=1
+    fi
+
+    echo
+fi
+
+if [ "$XHTTP_SET" = 0 ]; then
+    XHTTP_VALUE="$CURRENT_XHTTP"
+fi
+
+if [ "$INTERVAL_SET" = 0 ] && [ "$EXISTING_SYNC" = 0 ]; then
+    INTERVAL='86400'
+    INTERVAL_SET=1
+fi
+
+if [ "$MAX_NODES_SET" = 0 ] && [ "$EXISTING_SYNC" = 0 ]; then
+    MAX_NODES='20'
+    MAX_NODES_SET=1
+fi
+
+[ "$XHTTP_VALUE" = 0 ] || [ "$XHTTP_VALUE" = 1 ] || {
+    echo "ERROR: XHTTP selection must be 0 or 1"
+    exit 2
+}
+
+[ "$INTERVAL_SET" = 0 ] || is_uint "$INTERVAL" || {
+    echo "ERROR: interval must be an integer number of seconds"
+    exit 2
+}
+
+[ "$MAX_NODES_SET" = 0 ] || is_uint "$MAX_NODES" || {
+    echo "ERROR: max-nodes must be an integer >= 0"
+    exit 2
+}
+
+for raw_cc in $EXCLUDES; do
+    validate_country "$raw_cc" >/dev/null || {
+        echo "ERROR: invalid exclude country: $raw_cc"
+        exit 2
+    }
+done
+
+if [ "$SUB_URL_SET" = 1 ]; then
+    [ -n "$SUB_URL" ] && URL_SUMMARY="provided" || URL_SUMMARY="empty"
+elif [ -n "$CURRENT_URL" ]; then
+    URL_SUMMARY="keep current"
+else
+    URL_SUMMARY="not set"
+fi
+
+if [ "$EXCLUDES_SET" = 1 ]; then
+    [ -n "$EXCLUDES" ] && EXCLUDE_SUMMARY="$EXCLUDES" || EXCLUDE_SUMMARY="none"
+elif [ -n "$CURRENT_EXCLUDES" ]; then
+    EXCLUDE_SUMMARY="$CURRENT_EXCLUDES"
+else
+    EXCLUDE_SUMMARY="none"
+fi
+
+[ "$XHTTP_VALUE" = 1 ] && XHTTP_SUMMARY="yes" || XHTTP_SUMMARY="no"
+
+echo "[podkop-sub-sync] Settings:"
+echo "  XHTTP       : $XHTTP_SUMMARY"
+echo "  Subscription: $URL_SUMMARY"
+echo "  Exclude     : $EXCLUDE_SUMMARY"
+echo "  Interval    : ${INTERVAL:-$CURRENT_INTERVAL}"
+echo "  Max nodes   : ${MAX_NODES:-$CURRENT_MAX_NODES}"
+echo
+
 install_dependencies(){
     case "$PKG_MANAGER" in
         opkg)

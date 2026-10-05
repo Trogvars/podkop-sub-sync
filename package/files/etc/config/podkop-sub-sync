@@ -1,0 +1,35 @@
+config sync 'main'
+        option enabled '1'
+        option url ''
+        option target 'main'
+
+        option interval '86400'
+        option retry_interval '900'
+
+        option send_hwid '0'
+        option allow_xhttp '0'
+
+        option enable_vless '1'
+        option enable_trojan '1'
+        option enable_ss '1'
+
+        # Whitelist: keep only these countries (repeatable)
+        # list include_country 'RU'
+
+        # Blacklist: remove these countries (repeatable)
+        # list exclude_country 'RU'
+
+        option precheck_enabled '1'
+        option precheck_url 'https://www.gstatic.com/generate_204'
+        option precheck_http_code '204'
+        option precheck_connect_timeout '3'
+        option precheck_timeout '7'
+        option precheck_batch_size '6'
+        option precheck_base_port '39000'
+        option precheck_min_nodes '3'
+        option precheck_min_percent '20'
+        option precheck_max_nodes '20'
+
+        # Fresh installs verify TLS. Existing configs without this option
+        # keep the legacy behavior (runtime fallback = 1).
+        option precheck_insecure_tls '0'

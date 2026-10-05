@@ -1,0 +1,31 @@
+#!/bin/ash
+
+while :; do
+    printf '[%s] Starting subscription sync\n' "$(date '+%F %T')"
+
+    /usr/bin/podkop-sub-sync
+    RC=$?
+
+    INTERVAL="$(uci -q get podkop-sub-sync.main.interval 2>/dev/null || true)"
+    RETRY_INTERVAL="$(uci -q get podkop-sub-sync.main.retry_interval 2>/dev/null || true)"
+
+    case "$INTERVAL" in
+        ''|*[!0-9]*) INTERVAL=86400 ;;
+    esac
+    case "$RETRY_INTERVAL" in
+        ''|*[!0-9]*) RETRY_INTERVAL=900 ;;
+    esac
+
+    [ "$INTERVAL" -lt 60 ] && INTERVAL=60
+    [ "$RETRY_INTERVAL" -lt 60 ] && RETRY_INTERVAL=60
+
+    if [ "$RC" -eq 0 ]; then
+        printf '[%s] Subscription sync completed successfully\n' "$(date '+%F %T')"
+        printf '[%s] Next sync in %ss\n' "$(date '+%F %T')" "$INTERVAL"
+        sleep "$INTERVAL"
+    else
+        printf '[%s] Subscription sync failed with code %s\n' "$(date '+%F %T')" "$RC"
+        printf '[%s] Retry in %ss\n' "$(date '+%F %T')" "$RETRY_INTERVAL"
+        sleep "$RETRY_INTERVAL"
+    fi
+done

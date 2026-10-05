@@ -86,6 +86,45 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+is_uint(){
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+validate_country(){
+    cc="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    case "$cc" in
+        [A-Z][A-Z]) printf '%s\n' "$cc" ;;
+        *) return 1 ;;
+    esac
+}
+
+[ -z "$INTERVAL" ] || is_uint "$INTERVAL" || {
+    echo "ERROR: interval must be an integer number of seconds"
+    exit 2
+}
+
+[ -z "$MAX_NODES" ] || is_uint "$MAX_NODES" || {
+    echo "ERROR: max-nodes must be an integer >= 0"
+    exit 2
+}
+
+for raw_cc in $INCLUDES; do
+    validate_country "$raw_cc" >/dev/null || {
+        echo "ERROR: invalid include country: $raw_cc"
+        exit 2
+    }
+done
+
+for raw_cc in $EXCLUDES; do
+    validate_country "$raw_cc" >/dev/null || {
+        echo "ERROR: invalid exclude country: $raw_cc"
+        exit 2
+    }
+done
+
 [ "$(id -u)" = 0 ] || { echo "ERROR: run as root"; exit 1; }
 [ -r /etc/openwrt_release ] || { echo "ERROR: OpenWrt is required"; exit 1; }
 
@@ -150,6 +189,19 @@ for c in curl jq uci; do
     }
 done
 
+for f in \
+    "$SRC/usr/bin/podkop-sub-sync" \
+    "$SRC/usr/bin/podkop-sub-precheck" \
+    "$SRC/usr/bin/podkop-sub-sync-daemon" \
+    "$SRC/usr/lib/podkop-sub-sync/common.sh" \
+    "$SRC/etc/init.d/podkop-sub-sync"
+do
+    /bin/ash -n "$f" || {
+        echo "ERROR: source syntax error in $f"
+        exit 1
+    }
+done
+
 BACKUP_DIR="/root/podkop-sub-sync-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
@@ -174,8 +226,49 @@ do
     backup_if_exists "$f"
 done
 
+OLD_SYNC_ENABLED="$(uci -q get podkop-sub-sync.main.enabled 2>/dev/null || echo 0)"
+OLD_SYNC_URL="$(uci -q get podkop-sub-sync.main.url 2>/dev/null || true)"
+
+restart_old_service(){
+    if [ "$OLD_SYNC_ENABLED" = 1 ] && [ -n "$OLD_SYNC_URL" ] && [ -x /etc/init.d/podkop-sub-sync ]; then
+        /etc/init.d/podkop-sub-sync start >/dev/null 2>&1 || true
+    fi
+}
+
 if [ -x /etc/init.d/podkop-sub-sync ]; then
     /etc/init.d/podkop-sub-sync stop >/dev/null 2>&1 || true
+fi
+
+LOCK="/var/lock/podkop-sub-sync.lock"
+if [ -r "$LOCK/pid" ]; then
+    RUNNING_PID="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    case "$RUNNING_PID" in
+        ''|*[!0-9]*) ;;
+        *)
+            if kill -0 "$RUNNING_PID" 2>/dev/null; then
+                if [ ! -r "/proc/${RUNNING_PID}/cmdline" ] ||
+                   tr '\000' ' ' <"/proc/${RUNNING_PID}/cmdline" 2>/dev/null | grep -q 'podkop-sub-sync'; then
+                    echo "ERROR: updater is still running (pid $RUNNING_PID); installation aborted before replacing files"
+                    restart_old_service
+                    exit 1
+                fi
+            fi
+            ;;
+    esac
+fi
+
+NEED_XHTTP="$WITH_XHTTP"
+[ "$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || echo 0)" = 1 ] && NEED_XHTTP=1
+
+if [ "$NEED_XHTTP" = 1 ]; then
+    # Use the reviewed source helper before replacing the installed runtime.
+    # shellcheck disable=SC1090
+    . "$SRC/usr/lib/podkop-sub-sync/common.sh"
+    pss_ensure_xhttp_stack || {
+        echo "ERROR: XHTTP dependency setup failed; existing podkop-sub-sync files were not replaced"
+        restart_old_service
+        exit 1
+    }
 fi
 
 mkdir -p \
@@ -287,17 +380,6 @@ fi
 [ "$WITH_XHTTP" = 1 ] && uci set podkop-sub-sync.main.allow_xhttp='1'
 
 uci commit podkop-sub-sync
-
-COMMON="/usr/lib/podkop-sub-sync/common.sh"
-# shellcheck disable=SC1090
-. "$COMMON"
-
-if [ "$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || echo 0)" = 1 ]; then
-    pss_ensure_xhttp_stack || {
-        echo "ERROR: XHTTP dependency setup failed"
-        exit 1
-    }
-fi
 
 for f in \
     /usr/bin/podkop-sub-sync \

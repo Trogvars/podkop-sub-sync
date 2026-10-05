@@ -164,3 +164,19 @@ OpenWrt BusyBox ash.
 
 **Fix:** CI installs BusyBox and `check.sh` validates every shell file with
 both the host `sh -n` and `busybox ash -n`.
+
+
+### 13. Compressed SBE and dual-process precheck on small routers
+
+**Severity:** high for OpenWrt 24.x devices with constrained RAM/flash
+
+The compressed SBE build solves flash-space pressure, but its executable is
+decompressed in memory. The precheck normally runs a temporary sing-box while
+the production Podkop sing-box is still active. On a ~256 MiB router this can
+cause the second process to receive SIGKILL (exit 137) before validation.
+
+**Fix:** when the installed SBE identifies itself as UPX-compressed, total RAM
+is below 384 MiB, and a production sing-box process is active, precheck
+temporarily stops Podkop, rechecks direct connectivity, performs the tests with
+one sing-box instance, and restores Podkop from both the normal path and cleanup
+trap. Other installations retain zero-downtime precheck.

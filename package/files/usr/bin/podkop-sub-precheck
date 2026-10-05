@@ -168,6 +168,60 @@ production_singbox_running(){
     pidof sing-box >/dev/null 2>&1 || pidof sing-box-core >/dev/null 2>&1
 }
 
+production_singbox_pids(){
+    {
+        pidof sing-box 2>/dev/null || true
+        pidof sing-box-core 2>/dev/null || true
+    } | tr ' ' '\n' | awk 'NF && !seen[$1]++ {printf "%s ", $1}'
+}
+
+stop_production_singbox(){
+    STOP_WAITED=0
+
+    while production_singbox_running && [ "$STOP_WAITED" -lt 10 ]; do
+        sleep 1
+        STOP_WAITED=$((STOP_WAITED + 1))
+    done
+
+    production_singbox_running || return 0
+
+    log "WARN: sing-box core still running after Podkop stop; retrying sing-box service stop"
+    [ -x /etc/init.d/sing-box ] && /etc/init.d/sing-box stop >/dev/null 2>&1 || true
+
+    STOP_WAITED=0
+    while production_singbox_running && [ "$STOP_WAITED" -lt 5 ]; do
+        sleep 1
+        STOP_WAITED=$((STOP_WAITED + 1))
+    done
+
+    production_singbox_running || return 0
+
+    CORE_PIDS="$(production_singbox_pids)"
+    [ -n "$CORE_PIDS" ] || return 0
+
+    log "WARN: sing-box core still running; sending TERM to pid(s): $CORE_PIDS"
+    # shellcheck disable=SC2086
+    kill $CORE_PIDS 2>/dev/null || true
+
+    STOP_WAITED=0
+    while production_singbox_running && [ "$STOP_WAITED" -lt 5 ]; do
+        sleep 1
+        STOP_WAITED=$((STOP_WAITED + 1))
+    done
+
+    production_singbox_running || return 0
+
+    CORE_PIDS="$(production_singbox_pids)"
+    [ -n "$CORE_PIDS" ] || return 0
+
+    log "WARN: sing-box core ignored TERM; sending KILL to pid(s): $CORE_PIDS"
+    # shellcheck disable=SC2086
+    kill -9 $CORE_PIDS 2>/dev/null || true
+    sleep 1
+
+    ! production_singbox_running
+}
+
 restart_podkop_if_stopped(){
     [ "$PODKOP_STOPPED" = 1 ] || return 0
 
@@ -231,12 +285,13 @@ if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
         exit 13
     }
     PODKOP_STOPPED=1
-    sleep 2
 
-    if production_singbox_running; then
-        log "ERROR: sing-box/sing-box-core is still running after Podkop stop"
+    if ! stop_production_singbox; then
+        log "ERROR: could not terminate production sing-box/sing-box-core"
         exit 13
     fi
+
+    log "Production sing-box stopped for low-memory precheck"
 
     DIRECT_CODE="$(curl $CURL_TLS_OPT -sS \
         --connect-timeout "$CONNECT_TIMEOUT" \

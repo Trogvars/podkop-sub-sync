@@ -1,0 +1,411 @@
+#!/bin/ash
+
+TAG="podkop-sub-sync"
+CFG="podkop-sub-sync"
+SEC="main"
+LOCK="/var/lock/podkop-sub-sync.lock"
+STATE_DIR="/etc/podkop-sub-sync-state"
+COMMON="/usr/lib/podkop-sub-sync/common.sh"
+
+log(){ printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
+need(){ command -v "$1" >/dev/null 2>&1 || { log "ERROR: missing command: $1"; exit 1; }; }
+
+[ -r "$COMMON" ] || { log "ERROR: common library not found: $COMMON"; exit 1; }
+# shellcheck disable=SC1090
+. "$COMMON"
+
+for c in curl uci base64 sha256sum sing-box grep sed sort gzip awk tr wc cp mkdir rm; do
+    need "$c"
+done
+
+cfg_get(){
+    pss_key="$1"
+    pss_default="$2"
+    pss_value="$(uci -q get "${CFG}.${SEC}.${pss_key}" 2>/dev/null || true)"
+    [ -n "$pss_value" ] && printf '%s\n' "$pss_value" || printf '%s\n' "$pss_default"
+}
+
+country_flag_encoded(){
+    CODE="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+    [ "${#CODE}" -eq 2 ] || return 1
+
+    C1="${CODE%?}"
+    C2="${CODE#?}"
+
+    I1="$(awk -v c="$C1" 'BEGIN{n=index("ABCDEFGHIJKLMNOPQRSTUVWXYZ",c);if(!n)exit 1;print n-1}')" || return 1
+    I2="$(awk -v c="$C2" 'BEGIN{n=index("ABCDEFGHIJKLMNOPQRSTUVWXYZ",c);if(!n)exit 1;print n-1}')" || return 1
+
+    printf '%%F0%%9F%%87%%%02X%%F0%%9F%%87%%%02X\n' \
+        $((0xA6 + I1)) $((0xA6 + I2))
+}
+
+count_protocol(){
+    grep -c "^$1://" "$2" 2>/dev/null || true
+}
+
+LOCK_HELD=0
+TMP=""
+
+cleanup(){
+    [ -n "$TMP" ] && rm -rf "$TMP"
+    if [ "$LOCK_HELD" = 1 ]; then
+        rm -rf "$LOCK"
+    fi
+}
+
+acquire_lock(){
+    if mkdir "$LOCK" 2>/dev/null; then
+        printf '%s\n' "$$" >"$LOCK/pid"
+        LOCK_HELD=1
+        return 0
+    fi
+
+    OLD_PID=""
+    [ -r "$LOCK/pid" ] && OLD_PID="$(cat "$LOCK/pid" 2>/dev/null || true)"
+
+    case "$OLD_PID" in
+        ''|*[!0-9]*) ;;
+        *)
+            if kill -0 "$OLD_PID" 2>/dev/null; then
+                if [ ! -r "/proc/${OLD_PID}/cmdline" ] ||
+                   tr '\000' ' ' <"/proc/${OLD_PID}/cmdline" 2>/dev/null | grep -q 'podkop-sub-sync'; then
+                    log "Another updater is already running (pid $OLD_PID)"
+                    return 2
+                fi
+            fi
+            ;;
+    esac
+
+    log "Removing stale updater lock"
+    rm -rf "$LOCK"
+
+    mkdir "$LOCK" 2>/dev/null || {
+        log "ERROR: cannot acquire updater lock"
+        return 1
+    }
+
+    printf '%s\n' "$$" >"$LOCK/pid"
+    LOCK_HELD=1
+    return 0
+}
+
+ENABLED="$(cfg_get enabled 0)"
+[ "$ENABLED" = 1 ] || { log "Sync disabled"; exit 0; }
+
+acquire_lock
+LOCK_RC=$?
+[ "$LOCK_RC" -eq 2 ] && exit 0
+[ "$LOCK_RC" -eq 0 ] || exit 1
+
+TMP="$(mktemp -d /tmp/podkop-sub.XXXXXX)" || {
+    rm -rf "$LOCK"
+    exit 1
+}
+trap cleanup EXIT INT TERM
+
+URL="$(cfg_get url '')"
+TARGET="$(cfg_get target main)"
+SEND_HWID="$(cfg_get send_hwid 0)"
+HWID="$(cfg_get hwid '')"
+ALLOW_XHTTP="$(cfg_get allow_xhttp 0)"
+ENABLE_VLESS="$(cfg_get enable_vless 1)"
+ENABLE_TROJAN="$(cfg_get enable_trojan 1)"
+ENABLE_SS="$(cfg_get enable_ss 1)"
+INCLUDE_COUNTRIES="$(uci -q get "${CFG}.${SEC}.include_country" 2>/dev/null || true)"
+EXCLUDE_COUNTRIES="$(uci -q get "${CFG}.${SEC}.exclude_country" 2>/dev/null || true)"
+
+UA="$(cfg_get user_agent '')"
+[ -n "$UA" ] || UA="podkop-sub-sync/$(pss_version)"
+
+if [ "$ALLOW_XHTTP" = 1 ]; then
+    pss_ensure_xhttp_stack || exit 4
+fi
+
+[ -n "$URL" ] || { log "ERROR: subscription URL empty"; exit 2; }
+uci -q get "podkop.${TARGET}" >/dev/null 2>&1 || {
+    log "ERROR: podkop section '$TARGET' missing"
+    exit 2
+}
+
+PROTO_RE=""
+[ "$ENABLE_VLESS" = 1 ] && PROTO_RE="vless"
+if [ "$ENABLE_TROJAN" = 1 ]; then
+    [ -n "$PROTO_RE" ] && PROTO_RE="${PROTO_RE}|trojan" || PROTO_RE="trojan"
+fi
+if [ "$ENABLE_SS" = 1 ]; then
+    [ -n "$PROTO_RE" ] && PROTO_RE="${PROTO_RE}|ss" || PROTO_RE="ss"
+fi
+[ -n "$PROTO_RE" ] || { log "ERROR: all protocols disabled"; exit 2; }
+
+log "Enabled protocols: $PROTO_RE"
+
+if [ "$SEND_HWID" = 1 ] && [ -z "$HWID" ]; then
+    if [ -r /sys/class/net/br-lan/address ]; then
+        HWID="$(tr -d ':' </sys/class/net/br-lan/address)"
+    elif [ -r /etc/machine-id ]; then
+        HWID="$(cat /etc/machine-id)"
+    else
+        HWID="$(uname -n | sha256sum | awk '{print $1}')"
+    fi
+
+    uci set "${CFG}.${SEC}.hwid=${HWID}"
+    uci commit "$CFG"
+fi
+
+RAW="$TMP/sub.raw"
+log "Downloading subscription..."
+
+set -- -fsSL -H "Accept-Encoding: identity" \
+    --connect-timeout 10 --max-time 30 --retry 2 -A "$UA"
+
+if [ "$SEND_HWID" = 1 ]; then
+    set -- "$@" -H "X-HWID: $HWID" -H "X-Device-ID: $HWID"
+fi
+
+curl "$@" "$URL" -o "$RAW" || {
+    log "ERROR: download failed"
+    exit 3
+}
+
+[ -s "$RAW" ] || { log "ERROR: subscription response is empty"; exit 3; }
+
+PAYLOAD="$TMP/payload"
+if gzip -t "$RAW" >/dev/null 2>&1; then
+    gzip -dc "$RAW" >"$PAYLOAD" || {
+        log "ERROR: failed to unpack gzip subscription"
+        exit 3
+    }
+else
+    cp "$RAW" "$PAYLOAD"
+fi
+
+TEXT="$PAYLOAD"
+if ! grep -Eq '(vless|trojan|ss)://' "$PAYLOAD"; then
+    log "Trying base64 decode"
+    COMPACT="$TMP/base64"
+    DECODED="$TMP/decoded"
+
+    tr -d '\r\n\t ' <"$PAYLOAD" >"$COMPACT"
+    base64 -d "$COMPACT" >"$DECODED" 2>/dev/null || {
+        log "ERROR: unknown subscription format"
+        exit 4
+    }
+
+    if gzip -t "$DECODED" >/dev/null 2>&1; then
+        TEXT="$TMP/decoded-gzip"
+        gzip -dc "$DECODED" >"$TEXT" || {
+            log "ERROR: failed to unpack decoded gzip subscription"
+            exit 4
+        }
+    else
+        TEXT="$DECODED"
+    fi
+fi
+
+LIST="$TMP/proxies.list"
+grep -Eo "(${PROTO_RE})://[^[:space:]]+" "$TEXT" |
+    sed 's/\r$//' |
+    sort -u >"$LIST"
+
+COUNT="$(wc -l <"$LIST" | tr -d ' ')"
+[ "$COUNT" -gt 0 ] || {
+    log "ERROR: no supported proxies found after protocol filter"
+    exit 4
+}
+log "Found $COUNT proxies after protocol filter"
+
+XHTTP="$(grep -Eic '([?&])type=xhttp([&#]|$)' "$LIST" 2>/dev/null || true)"
+if [ "$XHTTP" -gt 0 ] && [ "$ALLOW_XHTTP" != 1 ]; then
+    log "Found $XHTTP XHTTP proxies; filtering them"
+    F="$TMP/xhttp.filtered"
+    grep -Eiv '([?&])type=xhttp([&#]|$)' "$LIST" >"$F" || true
+    mv "$F" "$LIST"
+fi
+
+if [ -n "$INCLUDE_COUNTRIES" ]; then
+    BEFORE="$(wc -l <"$LIST" | tr -d ' ')"
+    INCLUDED="$TMP/country-included.list"
+    : >"$INCLUDED"
+    VALID_INCLUDE=0
+
+    for COUNTRY in $INCLUDE_COUNTRIES; do
+        COUNTRY="$(printf '%s' "$COUNTRY" | tr '[:lower:]' '[:upper:]')"
+        FLAG="$(country_flag_encoded "$COUNTRY")" || {
+            log "WARN: invalid include country code: $COUNTRY"
+            continue
+        }
+
+        VALID_INCLUDE=$((VALID_INCLUDE + 1))
+        MATCHES="$(grep -icF "$FLAG" "$LIST" 2>/dev/null || true)"
+        log "Country $COUNTRY included: $MATCHES proxies"
+        grep -iF "$FLAG" "$LIST" >>"$INCLUDED" 2>/dev/null || true
+    done
+
+    [ "$VALID_INCLUDE" -gt 0 ] || {
+        log "ERROR: include_country contains no valid country codes"
+        exit 4
+    }
+
+    sort -u "$INCLUDED" >"$TMP/country-included.sorted"
+    mv "$TMP/country-included.sorted" "$LIST"
+
+    AFTER="$(wc -l <"$LIST" | tr -d ' ')"
+    log "Country include filter: $BEFORE -> $AFTER proxies"
+    [ "$AFTER" -gt 0 ] || {
+        log "ERROR: include_country filter removed all proxies"
+        exit 4
+    }
+fi
+
+for COUNTRY in $EXCLUDE_COUNTRIES; do
+    COUNTRY="$(printf '%s' "$COUNTRY" | tr '[:lower:]' '[:upper:]')"
+    FLAG="$(country_flag_encoded "$COUNTRY")" || {
+        log "WARN: invalid exclude country code: $COUNTRY"
+        continue
+    }
+
+    BEFORE="$(wc -l <"$LIST" | tr -d ' ')"
+    F="$TMP/country-${COUNTRY}.filtered"
+    grep -viF "$FLAG" "$LIST" >"$F" || true
+    mv "$F" "$LIST"
+
+    AFTER="$(wc -l <"$LIST" | tr -d ' ')"
+    log "Country $COUNTRY excluded: $((BEFORE - AFTER)) proxies"
+done
+
+AFTER_COUNTRY="$(wc -l <"$LIST" | tr -d ' ')"
+[ "$AFTER_COUNTRY" -gt 0 ] || {
+    log "ERROR: country filters removed all proxies"
+    exit 4
+}
+
+PRECHECK_ENABLED="$(cfg_get precheck_enabled 0)"
+if [ "$PRECHECK_ENABLED" = 1 ]; then
+    log "Running real proxy availability precheck..."
+    PRECHECKED="$TMP/proxies.prechecked"
+
+    /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
+    RC=$?
+
+    [ "$RC" -eq 0 ] || {
+        log "ERROR: proxy precheck failed (code $RC); current config unchanged"
+        exit 4
+    }
+
+    [ -s "$PRECHECKED" ] || {
+        log "ERROR: proxy precheck returned an empty list"
+        exit 4
+    }
+
+    mv "$PRECHECKED" "$LIST"
+    log "Precheck selected $(wc -l <"$LIST" | tr -d ' ') fastest working proxies"
+fi
+
+COUNT="$(wc -l <"$LIST" | tr -d ' ')"
+[ "$COUNT" -gt 0 ] || { log "ERROR: final proxy list is empty"; exit 4; }
+
+log "Final proxy list:"
+log "  VLESS : $(count_protocol vless "$LIST")"
+log "  Trojan: $(count_protocol trojan "$LIST")"
+log "  SS    : $(count_protocol ss "$LIST")"
+log "  Total : $COUNT"
+
+mkdir -p "$STATE_DIR"
+STATE="${STATE_DIR}/${TARGET}.sha256"
+OLD_STATE="/etc/podkop-sub-sync-${TARGET}.sha256"
+
+if [ ! -r "$STATE" ] && [ -r "$OLD_STATE" ]; then
+    cp "$OLD_STATE" "$STATE" 2>/dev/null || true
+fi
+
+HASH="$(sha256sum "$LIST" | awk '{print $1}')"
+if [ -r "$STATE" ] && [ "$HASH" = "$(cat "$STATE")" ]; then
+    log "Working proxy list unchanged ($COUNT proxies)"
+    exit 0
+fi
+
+log "Working proxy list changed: $COUNT proxies"
+
+BACKUP="$TMP/podkop.backup"
+cp /etc/config/podkop "$BACKUP" || {
+    log "ERROR: cannot back up /etc/config/podkop"
+    exit 5
+}
+
+rollback(){
+    log "ERROR: new config failed; restoring backup"
+    cp "$BACKUP" /etc/config/podkop
+    /etc/init.d/podkop restart >/dev/null 2>&1 || true
+    exit 5
+}
+
+uci set "podkop.${TARGET}.connection_type=proxy"
+uci set "podkop.${TARGET}.proxy_config_type=urltest"
+uci -q delete "podkop.${TARGET}.urltest_proxy_links"
+
+ADDED=0
+while IFS= read -r LINK; do
+    [ -n "$LINK" ] || continue
+    uci add_list "podkop.${TARGET}.urltest_proxy_links=${LINK}" || rollback
+    ADDED=$((ADDED + 1))
+done <"$LIST"
+
+uci commit podkop || rollback
+
+log "Written $ADDED proxy links to Podkop"
+log "Restarting Podkop..."
+/etc/init.d/podkop restart || rollback
+
+SINGCONF="$(uci -q get podkop.settings.config_path 2>/dev/null || true)"
+[ -n "$SINGCONF" ] || SINGCONF="/etc/sing-box/config.json"
+
+log "Waiting for Podkop/sing-box configuration to become ready..."
+
+CHECK_OK=0
+WAITED=0
+CHECK_OUT=""
+
+while [ "$WAITED" -lt 60 ]; do
+    if [ ! -s "$SINGCONF" ]; then
+        sleep 1
+        WAITED=$((WAITED + 1))
+        continue
+    fi
+
+    CHECK_OUT="$(sing-box check -c "$SINGCONF" 2>&1)"
+    RC=$?
+
+    if [ "$RC" -eq 0 ]; then
+        CHECK_OK=1
+        break
+    fi
+
+    printf '%s\n' "$CHECK_OUT" |
+        grep -qE 'rule-set.*no such file or directory|/tmp/sing-box/rulesets/.*no such file or directory' ||
+        break
+
+    [ $((WAITED % 5)) -eq 0 ] && log "Waiting for Podkop rulesets... ${WAITED}s"
+    sleep 1
+    WAITED=$((WAITED + 1))
+done
+
+if [ "$CHECK_OK" != 1 ]; then
+    log "ERROR: sing-box validation failed"
+    printf '%s\n' "$CHECK_OUT"
+    [ -s "$SINGCONF" ] && cp "$SINGCONF" /tmp/podkop-sub-broken.json
+    rollback
+fi
+
+log "sing-box configuration validated after ${WAITED}s"
+
+PWAIT=0
+while ! pidof sing-box >/dev/null 2>&1; do
+    PWAIT=$((PWAIT + 1))
+    [ "$PWAIT" -lt 20 ] || rollback
+    sleep 1
+done
+
+sing-box check -c "$SINGCONF" >/dev/null 2>&1 || rollback
+printf '%s\n' "$HASH" >"$STATE" || log "WARN: could not write state hash to $STATE"
+log "Update successful: $COUNT proxies"
+exit 0

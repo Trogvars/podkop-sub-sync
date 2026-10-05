@@ -1,0 +1,345 @@
+#!/bin/ash
+
+TAG="podkop-sub-precheck"
+CFG="podkop-sub-sync"
+SEC="main"
+INPUT="${1:-}"
+OUTPUT="${2:-}"
+
+log(){ printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
+die(){ log "ERROR: $*"; exit 1; }
+
+[ -n "$INPUT" ] || die "input file not specified"
+[ -n "$OUTPUT" ] || die "output file not specified"
+[ -s "$INPUT" ] || die "input list is empty"
+[ -r /usr/lib/podkop/sing_box_config_facade.sh ] || die "Podkop sing-box facade not found"
+
+for c in jq sing-box curl sort head cut awk sed wc tr; do
+    command -v "$c" >/dev/null 2>&1 || die "$c not installed"
+done
+
+# shellcheck disable=SC1091
+. /usr/lib/podkop/sing_box_config_facade.sh
+
+cfg_get(){
+    pc_key="$1"
+    pc_default="$2"
+    pc_value="$(uci -q get "${CFG}.${SEC}.${pc_key}" 2>/dev/null || true)"
+    [ -n "$pc_value" ] && printf '%s\n' "$pc_value" || printf '%s\n' "$pc_default"
+}
+
+is_uint(){
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+TEST_URL="$(cfg_get precheck_url 'https://www.gstatic.com/generate_204')"
+EXPECTED_CODE="$(cfg_get precheck_http_code 204)"
+TIMEOUT="$(cfg_get precheck_timeout 7)"
+CONNECT_TIMEOUT="$(cfg_get precheck_connect_timeout 3)"
+BATCH_SIZE="$(cfg_get precheck_batch_size 6)"
+BASE_PORT="$(cfg_get precheck_base_port 39000)"
+MIN_NODES="$(cfg_get precheck_min_nodes 3)"
+MIN_PERCENT="$(cfg_get precheck_min_percent 20)"
+MAX_NODES="$(cfg_get precheck_max_nodes 0)"
+INSECURE_TLS="$(cfg_get precheck_insecure_tls 1)"
+DNS_SERVER="$(uci -q get "${CFG}.${SEC}.precheck_dns_server" 2>/dev/null ||
+              uci -q get podkop.settings.bootstrap_dns_server 2>/dev/null ||
+              printf '%s\n' '1.1.1.1')"
+
+is_uint "$TIMEOUT" || die "precheck_timeout must be an integer"
+is_uint "$CONNECT_TIMEOUT" || die "precheck_connect_timeout must be an integer"
+is_uint "$BATCH_SIZE" || die "precheck_batch_size must be an integer"
+is_uint "$BASE_PORT" || die "precheck_base_port must be an integer"
+is_uint "$MIN_NODES" || die "precheck_min_nodes must be an integer"
+is_uint "$MIN_PERCENT" || die "precheck_min_percent must be an integer"
+is_uint "$MAX_NODES" || die "precheck_max_nodes must be an integer >= 0"
+
+[ "$TIMEOUT" -ge 1 ] || die "precheck_timeout must be >= 1"
+[ "$CONNECT_TIMEOUT" -ge 1 ] || die "precheck_connect_timeout must be >= 1"
+[ "$BATCH_SIZE" -ge 1 ] || die "precheck_batch_size must be >= 1"
+[ "$BATCH_SIZE" -le 64 ] || die "precheck_batch_size must be <= 64"
+[ "$BASE_PORT" -ge 1024 ] || die "precheck_base_port must be >= 1024"
+[ $((BASE_PORT + BATCH_SIZE)) -le 65535 ] || die "precheck_base_port + batch size exceeds 65535"
+[ "$MIN_PERCENT" -le 100 ] || die "precheck_min_percent must be <= 100"
+
+case "$INSECURE_TLS" in
+    0|1) ;;
+    *) die "precheck_insecure_tls must be 0 or 1" ;;
+esac
+
+case "$EXPECTED_CODE" in
+    any) ;;
+    [1-5][0-9][0-9]) ;;
+    *) die "precheck_http_code must be a 3-digit HTTP code or 'any'" ;;
+esac
+
+OUTBOUND_MARK=2097152
+CURL_TLS_OPT=""
+[ "$INSECURE_TLS" = 1 ] && CURL_TLS_OPT="-k"
+
+http_code_ok(){
+    CODE="$1"
+    if [ "$EXPECTED_CODE" = "any" ]; then
+        case "$CODE" in
+            2??|3??|4??) return 0 ;;
+        esac
+        return 1
+    fi
+    [ "$CODE" = "$EXPECTED_CODE" ]
+}
+
+node_name(){
+    LINK="$1"
+
+    case "$LINK" in
+        *#*)
+            NAME="${LINK#*#}"
+            NAME="$(url_decode "$NAME" 2>/dev/null)"
+            NAME="$(printf '%s' "$NAME" | tr '\r\n\t' '   ')"
+            [ -n "$NAME" ] && {
+                printf '%s\n' "$NAME"
+                return
+            }
+            ;;
+    esac
+
+    CLEAN="$(url_strip_fragment "$(url_decode "$LINK")")"
+    printf '%s %s:%s\n' \
+        "$(url_get_scheme "$CLEAN")" \
+        "$(url_get_host "$CLEAN")" \
+        "$(url_get_port "$CLEAN")"
+}
+
+set_outbound_mark(){
+    printf '%s\n' "$1" |
+        jq --arg tag "$2" --argjson mark "$OUTBOUND_MARK" \
+            '.outbounds |= map(if .tag == $tag then . + {routing_mark:$mark} else . end)'
+}
+
+strip_service_tags(){
+    printf '%s\n' "$1" |
+        jq '
+            if (.route.rules? != null) then
+                .route.rules |= map(if type=="object" then del(.__service_tag) else . end)
+            else . end
+            |
+            if (.dns.rules? != null) then
+                .dns.rules |= map(if type=="object" then del(.__service_tag) else . end)
+            else . end
+        '
+}
+
+stop_test_singbox(){
+    if [ -n "${TEST_PID:-}" ] && kill -0 "$TEST_PID" 2>/dev/null; then
+        kill "$TEST_PID" 2>/dev/null || true
+        wait "$TEST_PID" 2>/dev/null || true
+    fi
+    TEST_PID=""
+}
+
+TMP="$(mktemp -d /tmp/podkop-precheck.XXXXXX)" || die "cannot create temp dir"
+TEST_PID=""
+RANKED="$TMP/working-ranked.tsv"
+: >"$RANKED"
+
+cleanup(){
+    stop_test_singbox
+    rm -rf "$TMP"
+}
+trap cleanup EXIT INT TERM
+
+log "Checking test URL: $TEST_URL"
+
+CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
+    --connect-timeout "$CONNECT_TIMEOUT" \
+    --max-time "$TIMEOUT" \
+    -o /dev/null \
+    -w '%{http_code}' \
+    "$TEST_URL" 2>/dev/null)"
+
+if ! http_code_ok "$CONTROL_CODE"; then
+    log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000})"
+    exit 10
+fi
+
+log "Control URL is available (HTTP $CONTROL_CODE)"
+
+TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
+[ "$TOTAL" -gt 0 ] || die "no proxies to test"
+
+: >"$OUTPUT"
+GOOD=0
+BAD=0
+PARSER_BAD=0
+GLOBAL_INDEX=0
+START=1
+
+log "Starting full proxy precheck"
+log "Candidates : $TOTAL"
+log "Batch size : $BATCH_SIZE"
+log "Timeout    : ${TIMEOUT}s"
+log "Expected   : HTTP $EXPECTED_CODE"
+[ "$MAX_NODES" -gt 0 ] && log "Keep fastest: $MAX_NODES" || log "Keep fastest: unlimited"
+[ "$INSECURE_TLS" = 1 ] && log "TLS verify  : disabled" || log "TLS verify  : enabled"
+log ""
+
+while [ "$START" -le "$TOTAL" ]; do
+    END=$((START + BATCH_SIZE - 1))
+    [ "$END" -gt "$TOTAL" ] && END="$TOTAL"
+
+    BATCH="$TMP/batch-${START}.list"
+    MAP="$TMP/batch-${START}.map"
+    CONF="$TMP/batch-${START}.json"
+    SBLOG="$TMP/batch-${START}.log"
+
+    sed -n "${START},${END}p" "$INPUT" >"$BATCH"
+    : >"$MAP"
+
+    config='{"log":{},"dns":{},"ntp":{},"certificate":{},"endpoints":[],"inbounds":[],"outbounds":[],"route":{},"services":[],"experimental":{}}'
+    config="$(sing_box_cm_configure_log "$config" false error false)"
+    config="$(sing_box_cm_add_direct_outbound "$config" "precheck-direct")"
+    config="$(set_outbound_mark "$config" "precheck-direct")"
+    config="$(sing_box_cm_configure_dns "$config" "precheck-dns" "ipv4_only" true)"
+    config="$(sing_box_cm_add_udp_dns_server "$config" "precheck-dns" "$DNS_SERVER" 53 "" "precheck-direct")"
+    config="$(printf '%s\n' "$config" |
+        jq '.route=((.route//{})+{final:"precheck-direct",auto_detect_interface:true,default_domain_resolver:"precheck-dns"}) | .route.rules=(.route.rules//[])')"
+
+    LOCAL_INDEX=0
+
+    while IFS= read -r LINK; do
+        [ -n "$LINK" ] || continue
+
+        GLOBAL_INDEX=$((GLOBAL_INDEX + 1))
+        LOCAL_INDEX=$((LOCAL_INDEX + 1))
+        PORT=$((BASE_PORT + LOCAL_INDEX))
+
+        SECTION="precheck-${GLOBAL_INDEX}"
+        IN_TAG="precheck-in-${GLOBAL_INDEX}"
+        OUT_TAG="$(get_outbound_tag_by_section "$SECTION")"
+        NAME="$(node_name "$LINK")"
+
+        NEW_CONFIG="$(sing_box_cf_add_proxy_outbound "$config" "$SECTION" "$LINK" "0")"
+        PARSER_RC=$?
+
+        if [ "$PARSER_RC" -ne 0 ] || [ -z "$NEW_CONFIG" ]; then
+            log "[$GLOBAL_INDEX/$TOTAL] PARSER FAIL  $NAME"
+            PARSER_BAD=$((PARSER_BAD + 1))
+            BAD=$((BAD + 1))
+            continue
+        fi
+
+        config="$NEW_CONFIG"
+        config="$(set_outbound_mark "$config" "$OUT_TAG")"
+        config="$(sing_box_cf_add_mixed_inbound_and_route_rule \
+            "$config" "$IN_TAG" "127.0.0.1" "$PORT" "$OUT_TAG")"
+
+        printf '%s\t%s\t%s\n' "$PORT" "$GLOBAL_INDEX" "$LINK" >>"$MAP"
+    done <"$BATCH"
+
+    if [ ! -s "$MAP" ]; then
+        START=$((END + 1))
+        continue
+    fi
+
+    config="$(strip_service_tags "$config")"
+    printf '%s\n' "$config" >"$CONF"
+
+    CHECK="$(sing-box check -c "$CONF" 2>&1)"
+    CHECK_RC=$?
+    if [ "$CHECK_RC" -ne 0 ]; then
+        log "ERROR: temporary config failed validation: $CHECK"
+        cp "$CONF" /tmp/podkop-precheck-broken.json
+        exit 11
+    fi
+
+    sing-box run -c "$CONF" >"$SBLOG" 2>&1 &
+    TEST_PID=$!
+    sleep 1
+
+    if ! kill -0 "$TEST_PID" 2>/dev/null; then
+        log "ERROR: temporary sing-box exited"
+        tail -50 "$SBLOG"
+        exit 12
+    fi
+
+    TAB="$(printf '\t')"
+    while IFS="$TAB" read -r PORT INDEX LINK; do
+        [ -n "$LINK" ] || continue
+
+        NAME="$(node_name "$LINK")"
+        RESULT="$(curl $CURL_TLS_OPT -sS \
+            -x "http://127.0.0.1:${PORT}" \
+            --connect-timeout "$CONNECT_TIMEOUT" \
+            --max-time "$TIMEOUT" \
+            -o /dev/null \
+            -w '%{http_code} %{time_total}' \
+            "$TEST_URL" 2>/dev/null)"
+        CURL_RC=$?
+
+        CODE="$(printf '%s\n' "$RESULT" | awk '{print $1}')"
+        TIME="$(printf '%s\n' "$RESULT" | awk '{print $2}')"
+        [ -n "$CODE" ] || CODE="000"
+
+        if [ "$CURL_RC" -eq 0 ] && http_code_ok "$CODE"; then
+            MS="$(awk -v t="${TIME:-0}" 'BEGIN{printf "%.0f",t*1000}')"
+            printf '%s\t%s\n' "$MS" "$LINK" >>"$RANKED"
+            GOOD=$((GOOD + 1))
+            log "[$INDEX/$TOTAL] OK   ${MS}ms  $NAME"
+        else
+            BAD=$((BAD + 1))
+            log "[$INDEX/$TOTAL] FAIL HTTP=${CODE} rc=${CURL_RC}  $NAME"
+        fi
+    done <"$MAP"
+
+    stop_test_singbox
+    START=$((END + 1))
+done
+
+PERCENT=$((GOOD * 100 / TOTAL))
+REQUIRED_NODES="$MIN_NODES"
+[ "$TOTAL" -lt "$REQUIRED_NODES" ] && REQUIRED_NODES="$TOTAL"
+
+[ "$GOOD" -ge "$REQUIRED_NODES" ] || {
+    log "ERROR: only $GOOD nodes passed; minimum $REQUIRED_NODES"
+    exit 20
+}
+
+[ "$PERCENT" -ge "$MIN_PERCENT" ] || {
+    log "ERROR: only ${PERCENT}% passed; minimum ${MIN_PERCENT}%"
+    exit 21
+}
+
+SELECTED="$GOOD"
+if [ "$MAX_NODES" -gt 0 ] && [ "$GOOD" -gt "$MAX_NODES" ]; then
+    SELECTED="$MAX_NODES"
+fi
+
+SORTED_RANKED="$TMP/working-ranked.sorted"
+sort -n "$RANKED" >"$SORTED_RANKED"
+
+FASTEST_MS="$(awk 'NR==1{print $1; exit}' "$SORTED_RANKED")"
+SLOWEST_SELECTED_MS="$(awk -v n="$SELECTED" 'NR==n{print $1; exit}' "$SORTED_RANKED")"
+
+head -n "$SELECTED" "$SORTED_RANKED" |
+    cut -f2- |
+    sort -u >"$OUTPUT"
+
+ACTUAL_SELECTED="$(wc -l <"$OUTPUT" | tr -d ' ')"
+
+log ""
+log "========================================"
+log "Proxy precheck finished"
+log "Total       : $TOTAL"
+log "Working     : $GOOD"
+log "Failed      : $BAD"
+log "Parser fail : $PARSER_BAD"
+log "Success     : ${PERCENT}%"
+log "Selected    : $ACTUAL_SELECTED"
+[ -n "$FASTEST_MS" ] && log "Fastest     : ${FASTEST_MS}ms"
+[ -n "$SLOWEST_SELECTED_MS" ] && log "Cutoff      : ${SLOWEST_SELECTED_MS}ms"
+log "========================================"
+
+exit 0

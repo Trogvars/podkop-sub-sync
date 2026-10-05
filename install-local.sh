@@ -10,26 +10,34 @@ SRC="$ROOT/package/files"
 VERSION="$(cat "$ROOT/VERSION")"
 
 SUB_URL=""
+SUB_URL_SET=0
 INTERVAL=""
+INTERVAL_SET=0
 MAX_NODES=""
+MAX_NODES_SET=0
 INCLUDES=""
 EXCLUDES=""
+EXCLUDES_SET=0
 NO_START=0
-WITH_XHTTP=0
+XHTTP_VALUE=""
+XHTTP_SET=0
+INTERACTIVE=1
 
 usage(){
     cat <<'EOF'
 Usage: install-local.sh [options]
 
-  --url URL        VPN subscription URL
-  --interval SEC   Refresh interval in seconds
-  --max-nodes N    Keep only N fastest working nodes after precheck (0 = unlimited)
-  --include CC     Keep only this country; repeatable: --include RU --include KZ
-  --exclude CC     Exclude country; repeatable: --exclude RU --exclude UZ
-  --enable-xhttp   Enable XHTTP and automatically install/check its dependencies
-  --with-xhttp     Legacy alias for --enable-xhttp
-  --no-start       Install and enable, but do not start now
-  -h, --help       Show this help
+  --url URL          VPN subscription URL
+  --interval SEC     Refresh interval in seconds
+  --max-nodes N      Keep only N fastest working nodes after precheck (0 = unlimited)
+  --include CC       Keep only this country; repeatable: --include RU --include KZ
+  --exclude CC       Exclude country; repeatable: --exclude RU --exclude UZ
+  --enable-xhttp     Enable XHTTP and automatically install/check its dependencies
+  --disable-xhttp    Disable XHTTP (does not replace an already installed SBE)
+  --with-xhttp       Legacy alias for --enable-xhttp
+  --non-interactive  Do not prompt; use supplied/current/default values
+  --no-start         Install and enable, but do not start now
+  -h, --help         Show this help
 EOF
 }
 
@@ -45,16 +53,19 @@ while [ "$#" -gt 0 ]; do
         --url)
             need_value "$@"
             SUB_URL="$2"
+            SUB_URL_SET=1
             shift 2
             ;;
         --interval)
             need_value "$@"
             INTERVAL="$2"
+            INTERVAL_SET=1
             shift 2
             ;;
         --max-nodes)
             need_value "$@"
             MAX_NODES="$2"
+            MAX_NODES_SET=1
             shift 2
             ;;
         --include)
@@ -65,10 +76,21 @@ while [ "$#" -gt 0 ]; do
         --exclude)
             need_value "$@"
             EXCLUDES="${EXCLUDES}${EXCLUDES:+ }$2"
+            EXCLUDES_SET=1
             shift 2
             ;;
         --enable-xhttp|--with-xhttp)
-            WITH_XHTTP=1
+            XHTTP_VALUE=1
+            XHTTP_SET=1
+            shift
+            ;;
+        --disable-xhttp)
+            XHTTP_VALUE=0
+            XHTTP_SET=1
+            shift
+            ;;
+        --non-interactive)
+            INTERACTIVE=0
             shift
             ;;
         --no-start)

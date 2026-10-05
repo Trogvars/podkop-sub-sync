@@ -17,6 +17,9 @@ $HERE/package/files/etc/init.d/podkop-sub-sync
 
 for f in $FILES; do
     sh -n "$f"
+    if command -v busybox >/dev/null 2>&1; then
+        busybox ash -n "$f"
+    fi
 done
 
 ROOT_VERSION="$(cat "$HERE/VERSION")"

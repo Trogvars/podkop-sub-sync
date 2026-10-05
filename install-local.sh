@@ -535,7 +535,7 @@ fi
 
 if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main='sync'
-    uci set podkop-sub-sync.main.enabled='1'
+    uci set podkop-sub-sync.main.enabled='0'
     uci set podkop-sub-sync.main.url=''
     uci set podkop-sub-sync.main.target='main'
     uci set podkop-sub-sync.main.interval='86400'
@@ -586,7 +586,11 @@ uci -q get podkop-sub-sync.main.retry_interval >/dev/null 2>&1 ||
 
 if [ "$SUB_URL_SET" = 1 ]; then
     uci set "podkop-sub-sync.main.url=${SUB_URL}"
-    [ -n "$SUB_URL" ] && uci set podkop-sub-sync.main.enabled='1'
+    if [ -n "$SUB_URL" ]; then
+        uci set podkop-sub-sync.main.enabled='1'
+    else
+        uci set podkop-sub-sync.main.enabled='0'
+    fi
 fi
 
 if [ -n "$INCLUDES" ]; then

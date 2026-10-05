@@ -11,9 +11,46 @@ Automatic VPN subscription synchronization for **Podkop + sing-box** on
 The same command works on OpenWrt 24.x and 25.x:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/install.sh \
-  | sh -s -- \
-      --max-nodes 20
+wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/install.sh | sh
+```
+
+### Interactive setup
+
+When a TTY is available, installation is interactive by default.
+
+Fresh-install defaults:
+
+```text
+XHTTP        : No
+Subscription : skip
+Exclude      : RU
+Interval     : 86400
+Max nodes    : 20
+```
+
+Example:
+
+```text
+========================================
+  Podkop Subscription Sync setup
+========================================
+Enable XHTTP and install sing-box-extended? [y/N]:
+Subscription URL [Enter = skip]:
+Exclude country/countries [RU] (- = none):
+Sync interval in seconds [86400]:
+Maximum fastest nodes [20]:
+```
+
+On an existing installation, the current configured values are offered as the
+defaults, so pressing Enter preserves production settings.
+
+Prompts are read from `/dev/tty`, therefore the menu also works when the
+bootstrap itself is piped into `sh`.
+
+For automation, add:
+
+```sh
+--non-interactive
 ```
 
 The installer detects:
@@ -34,17 +71,20 @@ Useful installer arguments:
 --include CC
 --exclude CC
 --enable-xhttp
---with-xhttp     # legacy alias
+--disable-xhttp
+--with-xhttp       # legacy alias
+--non-interactive
 --no-start
 ```
 
 `--include` and `--exclude` may be repeated.
 
-Example:
+Non-interactive example:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/install.sh \
   | sh -s -- \
+      --non-interactive \
       --url 'https://example.com/sub/xxxxx' \
       --interval 86400 \
       --max-nodes 20 \
@@ -324,9 +364,7 @@ The resulting package is found under the SDK `bin/` tree.
 Running the unified installer over either legacy installation is supported:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/install.sh \
-  | sh -s -- \
-      --max-nodes 20
+wget -qO- https://raw.githubusercontent.com/Trogvars/podkop-sub-sync/main/install.sh | sh
 ```
 
 The installer:

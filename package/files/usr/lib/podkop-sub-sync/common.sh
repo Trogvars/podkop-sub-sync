@@ -59,12 +59,28 @@ pss_ensure_xhttp_stack(){
         }
 
         chmod 700 /tmp/podkop-sub-sync-sb-ext.sh
-        pss_log "XHTTP: selecting latest stable release and installer-recommended format"
 
         # Pinned installer currently asks:
         #   1) release number (1 = newest stable)
-        #   2) format (empty = its recommended default)
-        printf '1\n\n' | sh /tmp/podkop-sub-sync-sb-ext.sh || {
+        #   2) format
+        #
+        # On OpenWrt 24.x/opkg the upstream "recommended" normal archive may
+        # need far more temporary and flash space than its own 65 MiB precheck
+        # accounts for (archive + unpacked binary coexist in tmpfs). Prefer the
+        # compressed build there. On 25.x/apk keep the upstream recommended APK.
+        if command -v opkg >/dev/null 2>&1 && ! command -v apk >/dev/null 2>&1; then
+            pss_log "XHTTP: selecting latest stable release + compressed SBE build for opkg/OpenWrt 24.x"
+            PSS_SBE_INPUT='1
+1
+'
+        else
+            pss_log "XHTTP: selecting latest stable release + installer-recommended format"
+            PSS_SBE_INPUT='1
+
+'
+        fi
+
+        printf '%s' "$PSS_SBE_INPUT" | sh /tmp/podkop-sub-sync-sb-ext.sh || {
             pss_log "ERROR: sing-box-extended automatic installation failed"
             return 1
         }

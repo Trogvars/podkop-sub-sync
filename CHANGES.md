@@ -1,5 +1,21 @@
 # CHANGES
 
+## 2.0.1
+
+### Fixed
+
+- OpenWrt 24.x/opkg no longer blindly accepts the upstream SBE installer's
+  default normal archive.
+- The normal arm64 SBE archive is about 34 MiB compressed and is unpacked in
+  tmpfs while the archive is still present. The upstream 65 MiB temporary-space
+  threshold can therefore be insufficient even when `df -h` shows free overlay
+  space.
+- Automatic XHTTP dependency setup now explicitly chooses the **compressed SBE
+  build** on OpenWrt 24.x/opkg.
+- OpenWrt 25.x/apk keeps the upstream recommended APK/default selection.
+
+---
+
 ## 2.0.0
 
 ### Unified project

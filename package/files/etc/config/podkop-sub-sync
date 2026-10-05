@@ -1,5 +1,5 @@
 config sync 'main'
-        option enabled '1'
+        option enabled '0'
         option url ''
         option target 'main'
 

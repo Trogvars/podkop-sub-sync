@@ -1,5 +1,23 @@
 # CHANGES
 
+## 2.0.4
+
+### Fixed
+
+- Low-memory precheck no longer assumes that `/etc/init.d/podkop stop` has
+  synchronously terminated the compressed `sing-box-core` process.
+- After stopping Podkop, precheck now waits up to 10 seconds for sing-box to
+  exit naturally.
+- If the core remains, it retries `/etc/init.d/sing-box stop`, waits again,
+  then sends TERM to the remaining sing-box/sing-box-core PID(s).
+- KILL is used only as a final fallback if the lingering core ignores TERM.
+- The normal cleanup path still restarts Podkop automatically on every failure.
+
+This handles OpenWrt 24.x compressed SBE installations where Podkop's stop
+sequence returns before the real core process has fully exited.
+
+---
+
 ## 2.0.3
 
 ### Fixed

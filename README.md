@@ -214,6 +214,13 @@ Format selection is intentionally platform-specific:
   tmpfs/flash exhaustion while unpacking the much larger normal build.
 - OpenWrt 25.x / `apk`: the upstream recommended APK/default is used.
 
+On low-memory routers (<384 MiB RAM) running the compressed SBE build, a second
+simultaneous sing-box process can be killed by the kernel during real precheck.
+In that specific case the precheck temporarily stops Podkop, verifies direct
+connectivity, tests the candidate nodes with a single sing-box instance, then
+restores Podkop automatically. Normal/APK builds keep the usual zero-downtime
+precheck behavior.
+
 Current pinned helpers:
 
 ```text

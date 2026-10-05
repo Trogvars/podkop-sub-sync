@@ -336,29 +336,12 @@ esac
 uci -q get podkop-sub-sync.main.retry_interval >/dev/null 2>&1 ||
     uci set podkop-sub-sync.main.retry_interval='900'
 
-case "$INTERVAL" in
-    '') ;;
-    *[!0-9]*) echo "ERROR: interval must be an integer number of seconds"; exit 2 ;;
-    *) uci set "podkop-sub-sync.main.interval=${INTERVAL}" ;;
-esac
-
-case "$MAX_NODES" in
-    '') ;;
-    *[!0-9]*) echo "ERROR: max-nodes must be an integer >= 0"; exit 2 ;;
-    *) uci set "podkop-sub-sync.main.precheck_max_nodes=${MAX_NODES}" ;;
-esac
+[ -n "$INTERVAL" ] && uci set "podkop-sub-sync.main.interval=${INTERVAL}"
+[ -n "$MAX_NODES" ] && uci set "podkop-sub-sync.main.precheck_max_nodes=${MAX_NODES}"
 
 [ -n "$SUB_URL" ] && {
     uci set "podkop-sub-sync.main.url=${SUB_URL}"
     uci set podkop-sub-sync.main.enabled='1'
-}
-
-validate_country(){
-    cc="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
-    case "$cc" in
-        [A-Z][A-Z]) printf '%s\n' "$cc" ;;
-        *) return 1 ;;
-    esac
 }
 
 if [ -n "$INCLUDES" ]; then

@@ -493,9 +493,7 @@ if [ -r "$LOCK/pid" ]; then
     esac
 fi
 
-NEED_XHTTP="$WITH_XHTTP"
-[ "$(uci -q get podkop-sub-sync.main.enable_xhttp 2>/dev/null || echo 0)" = 1 ] && NEED_XHTTP=1
-[ "$(uci -q get podkop-sub-sync.main.allow_xhttp 2>/dev/null || echo 0)" = 1 ] && NEED_XHTTP=1
+NEED_XHTTP="$XHTTP_VALUE"
 
 if [ "$NEED_XHTTP" = 1 ]; then
     # Use the reviewed source helper before replacing the installed runtime.
@@ -585,13 +583,13 @@ esac
 uci -q get podkop-sub-sync.main.retry_interval >/dev/null 2>&1 ||
     uci set podkop-sub-sync.main.retry_interval='900'
 
-[ -n "$INTERVAL" ] && uci set "podkop-sub-sync.main.interval=${INTERVAL}"
-[ -n "$MAX_NODES" ] && uci set "podkop-sub-sync.main.precheck_max_nodes=${MAX_NODES}"
+[ "$INTERVAL_SET" = 1 ] && uci set "podkop-sub-sync.main.interval=${INTERVAL}"
+[ "$MAX_NODES_SET" = 1 ] && uci set "podkop-sub-sync.main.precheck_max_nodes=${MAX_NODES}"
 
-[ -n "$SUB_URL" ] && {
+if [ "$SUB_URL_SET" = 1 ]; then
     uci set "podkop-sub-sync.main.url=${SUB_URL}"
-    uci set podkop-sub-sync.main.enabled='1'
-}
+    [ -n "$SUB_URL" ] && uci set podkop-sub-sync.main.enabled='1'
+fi
 
 if [ -n "$INCLUDES" ]; then
     uci -q delete podkop-sub-sync.main.include_country || true
@@ -605,7 +603,7 @@ if [ -n "$INCLUDES" ]; then
     done
 fi
 
-if [ -n "$EXCLUDES" ]; then
+if [ "$EXCLUDES_SET" = 1 ]; then
     uci -q delete podkop-sub-sync.main.exclude_country || true
 
     for raw_cc in $EXCLUDES; do
@@ -617,7 +615,7 @@ if [ -n "$EXCLUDES" ]; then
     done
 fi
 
-[ "$WITH_XHTTP" = 1 ] && uci set podkop-sub-sync.main.enable_xhttp='1'
+uci set "podkop-sub-sync.main.enable_xhttp=${XHTTP_VALUE}"
 
 uci commit podkop-sub-sync
 

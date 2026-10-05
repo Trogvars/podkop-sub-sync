@@ -30,7 +30,8 @@
   User-Agent defaults.
 - Fresh installs verify TLS during precheck; existing configs retain the old
   insecure fallback unless explicitly changed.
-- Added `check.sh` and GitHub CI syntax/version consistency checks.
+- Added `check.sh` and GitHub CI syntax/version consistency checks, including BusyBox ash parsing.
+- Installer migration removes recognized generated legacy User-Agent values so the new VERSION-based default is used; custom User-Agent values are preserved.
 
 ### Preserved behavior
 

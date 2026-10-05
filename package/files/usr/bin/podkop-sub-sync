@@ -371,8 +371,11 @@ fi
 COUNT="$(wc -l <"$LIST" | tr -d ' ')"
 [ "$COUNT" -gt 0 ] || { log "ERROR: final proxy list is empty"; exit 4; }
 
+FINAL_XHTTP="$(grep -Eic '([?&])type=xhttp([&#]|$)' "$LIST" 2>/dev/null || true)"
+
 log "Final proxy list:"
 log "  VLESS : $(count_protocol vless "$LIST")"
+log "  XHTTP : $FINAL_XHTTP"
 log "  Trojan: $(count_protocol trojan "$LIST")"
 log "  SS    : $(count_protocol ss "$LIST")"
 log "  Total : $COUNT"

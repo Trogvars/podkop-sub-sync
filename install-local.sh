@@ -253,13 +253,6 @@ CURRENT_XHTTP="$(uci -q get podkop-sub-sync.main.enable_xhttp 2>/dev/null || tru
 [ -n "$CURRENT_MAX_NODES" ] || CURRENT_MAX_NODES='20'
 [ -n "$CURRENT_XHTTP" ] || CURRENT_XHTTP='0'
 
-if [ "$EXISTING_SYNC" = 0 ]; then
-    [ "$EXCLUDES_SET" = 1 ] || {
-        EXCLUDES='RU'
-        EXCLUDES_SET=1
-    }
-fi
-
 if [ "$INTERACTIVE" = 1 ]; then
     echo
     echo "========================================"
@@ -336,6 +329,11 @@ fi
 
 if [ "$XHTTP_SET" = 0 ]; then
     XHTTP_VALUE="$CURRENT_XHTTP"
+fi
+
+if [ "$EXCLUDES_SET" = 0 ] && [ "$EXISTING_SYNC" = 0 ]; then
+    EXCLUDES='RU'
+    EXCLUDES_SET=1
 fi
 
 if [ "$INTERVAL_SET" = 0 ] && [ "$EXISTING_SYNC" = 0 ]; then

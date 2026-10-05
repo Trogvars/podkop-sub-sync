@@ -142,25 +142,18 @@ stop_test_singbox(){
 
 wait_for_mixed_inbound(){
     READY_PORT="$1"
+    READY_HEX="$(printf '%04X' "$READY_PORT")"
     READY_WAITED=0
 
     while [ "$READY_WAITED" -lt 20 ]; do
-        if ! kill -0 "$TEST_PID" 2>/dev/null; then
-            return 2
+        kill -0 "$TEST_PID" 2>/dev/null || return 2
+
+        if awk -v p=":${READY_HEX}" '
+            $2 ~ (p "$") && $4 == "0A" { found=1 }
+            END { exit(found ? 0 : 1) }
+        ' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+            return 0
         fi
-
-        curl -sS \
-            -x "http://127.0.0.1:${READY_PORT}" \
-            --connect-timeout 1 \
-            --max-time 1 \
-            -o /dev/null \
-            "http://127.0.0.1:1/" >/dev/null 2>&1
-        READY_RC=$?
-
-        # curl rc=7 means it could not connect to the local mixed inbound.
-        # Any other result proves the inbound accepted the connection; the
-        # destination itself is deliberately irrelevant/unreachable.
-        [ "$READY_RC" -ne 7 ] && return 0
 
         sleep 1
         READY_WAITED=$((READY_WAITED + 1))
@@ -358,9 +351,10 @@ while [ "$START" -le "$TOTAL" ]; do
     TEST_PID=$!
 
     READY_PORT="$(awk 'NR==1 {print $1; exit}' "$MAP")"
-    if ! wait_for_mixed_inbound "$READY_PORT"; then
-        READY_RC=$?
+    wait_for_mixed_inbound "$READY_PORT"
+    READY_RC=$?
 
+    if [ "$READY_RC" -ne 0 ]; then
         if [ "$READY_RC" -eq 2 ]; then
             log "ERROR: temporary sing-box exited before opening mixed inbound"
         else

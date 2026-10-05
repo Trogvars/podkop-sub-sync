@@ -1,5 +1,27 @@
 # CHANGES
 
+## 2.0.2
+
+### Fixed
+
+- Detects the UPX-compressed sing-box-extended build on routers with less than
+  384 MiB RAM.
+- When the production `sing-box` process is already running, proxy precheck
+  temporarily stops Podkop so the temporary test sing-box can start without
+  competing with a second decompressed compressed-core instance.
+- Podkop is restored automatically after precheck and also from the cleanup
+  trap on any failure.
+- Direct control-URL connectivity is rechecked immediately after Podkop is
+  stopped before any proxy batches are tested.
+- Exit code 137 from `sing-box check` is now reported explicitly as likely
+  OOM together with current `MemAvailable`.
+
+This low-memory mode only affects compressed SBE installations below the RAM
+threshold. Normal/APK SBE installations keep the previous zero-downtime
+precheck behavior.
+
+---
+
 ## 2.0.1
 
 ### Fixed

@@ -140,7 +140,40 @@ stop_test_singbox(){
     TEST_PID=""
 }
 
+wait_for_mixed_inbound(){
+    READY_PORT="$1"
+    READY_WAITED=0
+
+    while [ "$READY_WAITED" -lt 20 ]; do
+        if ! kill -0 "$TEST_PID" 2>/dev/null; then
+            return 2
+        fi
+
+        curl -sS \
+            -x "http://127.0.0.1:${READY_PORT}" \
+            --connect-timeout 1 \
+            --max-time 1 \
+            -o /dev/null \
+            "http://127.0.0.1:1/" >/dev/null 2>&1
+        READY_RC=$?
+
+        # curl rc=7 means it could not connect to the local mixed inbound.
+        # Any other result proves the inbound accepted the connection; the
+        # destination itself is deliberately irrelevant/unreachable.
+        [ "$READY_RC" -ne 7 ] && return 0
+
+        sleep 1
+        READY_WAITED=$((READY_WAITED + 1))
+    done
+
+    return 1
+}
+
 PODKOP_STOPPED=0
+
+production_singbox_running(){
+    pidof sing-box >/dev/null 2>&1 || pidof sing-box-core >/dev/null 2>&1
+}
 
 restart_podkop_if_stopped(){
     [ "$PODKOP_STOPPED" = 1 ] || return 0
@@ -193,7 +226,7 @@ esac
 if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
    [ "$MEM_TOTAL_KB" -gt 0 ] &&
    [ "$MEM_TOTAL_KB" -lt 393216 ] &&
-   pidof sing-box >/dev/null 2>&1 &&
+   production_singbox_running &&
    [ -x /etc/init.d/podkop ]; then
 
     MEM_TOTAL_MB=$((MEM_TOTAL_KB / 1024))
@@ -207,8 +240,8 @@ if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
     PODKOP_STOPPED=1
     sleep 2
 
-    if pidof sing-box >/dev/null 2>&1; then
-        log "ERROR: sing-box is still running after Podkop stop"
+    if production_singbox_running; then
+        log "ERROR: sing-box/sing-box-core is still running after Podkop stop"
         exit 13
     fi
 
@@ -323,10 +356,17 @@ while [ "$START" -le "$TOTAL" ]; do
 
     sing-box run -c "$CONF" >"$SBLOG" 2>&1 &
     TEST_PID=$!
-    sleep 1
 
-    if ! kill -0 "$TEST_PID" 2>/dev/null; then
-        log "ERROR: temporary sing-box exited"
+    READY_PORT="$(awk 'NR==1 {print $1; exit}' "$MAP")"
+    if ! wait_for_mixed_inbound "$READY_PORT"; then
+        READY_RC=$?
+
+        if [ "$READY_RC" -eq 2 ]; then
+            log "ERROR: temporary sing-box exited before opening mixed inbound"
+        else
+            log "ERROR: temporary sing-box did not open mixed inbound 127.0.0.1:${READY_PORT} within 20s"
+        fi
+
         tail -50 "$SBLOG"
         exit 12
     fi

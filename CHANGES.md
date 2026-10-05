@@ -1,5 +1,21 @@
 # CHANGES
 
+## 2.2.2
+
+### Fixed
+
+- Removed the redundant second `sing-box check` that ran after Podkop had
+  already started the production sing-box process.
+- With UPX-compressed SBE, that second validation starts another decompressed
+  `sing-box-core` alongside production. On ~256 MiB routers this can exhaust
+  RAM/swap and trigger the kernel OOM killer.
+- The updater now relies on the successful validation already performed during
+  Podkop startup, then checks that the production sing-box process remains alive
+  for a 5-second stability window without spawning a second core.
+- State hash is written only after that stability window passes.
+
+---
+
 ## 2.2.1
 
 ### Fixed

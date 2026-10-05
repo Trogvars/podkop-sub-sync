@@ -43,6 +43,10 @@ count_protocol(){
     grep -c "^$1://" "$2" 2>/dev/null || true
 }
 
+singbox_running(){
+    pidof sing-box >/dev/null 2>&1 || pidof sing-box-core >/dev/null 2>&1
+}
+
 LOCK_HELD=0
 TMP=""
 
@@ -446,12 +450,16 @@ fi
 log "sing-box configuration validated after ${WAITED}s"
 
 PWAIT=0
-while ! pidof sing-box >/dev/null 2>&1; do
+while ! singbox_running; do
     PWAIT=$((PWAIT + 1))
-    [ "$PWAIT" -lt 20 ] || rollback
+    if [ "$PWAIT" -ge 20 ]; then
+        log "ERROR: sing-box process did not appear after Podkop restart"
+        rollback
+    fi
     sleep 1
 done
 
+log "sing-box process is running"
 sing-box check -c "$SINGCONF" >/dev/null 2>&1 || rollback
 printf '%s\n' "$HASH" >"$STATE" || log "WARN: could not write state hash to $STATE"
 log "Update successful: $COUNT proxies"

@@ -1,0 +1,74 @@
+# CHANGES
+
+## 2.0.0
+
+### Unified project
+
+- Merged the former OpenWrt 24.x and 25.x projects into one
+  `Trogvars/podkop-sub-sync` repository.
+- One runtime codebase is now used on both OpenWrt generations.
+- `install.sh` is now a single bootstrap URL for both OpenWrt 24.x and 25.x.
+- `install-local.sh` detects the OpenWrt version and package manager.
+- One OpenWrt `package/Makefile` is used for both package formats:
+  OpenWrt 24.x builds IPK, OpenWrt 25.x builds APK.
+- Removed the need for committed generated tar.gz bundles; GitHub's repository
+  source archive is used directly by the bootstrap installer.
+
+### Reliability and review fixes
+
+- XHTTP auto-repair now runs only after the updater lock is acquired.
+- Updater lock now stores a PID and recovers stale lock directories.
+- SBE installer and Podkop XHTTP patch helper scripts are pinned to reviewed
+  Git commit revisions instead of executing moving `main` scripts as root.
+- Installer validates its inputs/source scripts before changes, stops the old sync service, and refuses to replace files while an updater PID lock is still active.
+- Unified subscription download path no longer depends on `curl --compressed`.
+- Added stronger validation for country and precheck numeric options, including timeout values.
+- Fixed the legacy `/bin/sh` build helper brace-expansion bug.
+- Moved SHA state to `/etc/podkop-sub-sync-state/` with migration from the old
+  state filename.
+- Added a central installed VERSION file and removed stale hard-coded
+  User-Agent defaults.
+- Fresh installs verify TLS during precheck; existing configs retain the old
+  insecure fallback unless explicitly changed.
+- Added `check.sh` and GitHub CI syntax/version consistency checks.
+
+### Preserved behavior
+
+- Existing `/etc/config/podkop-sub-sync` is preserved by installer upgrades.
+- VLESS, Trojan and Shadowsocks filtering.
+- XHTTP automatic SBE + Podkop patch recovery.
+- `include_country` / `exclude_country`.
+- Full real-proxy precheck through temporary sing-box.
+- `precheck_max_nodes` fastest-node selection.
+- SHA-based no-op updates.
+- Podkop rollback after invalid generated sing-box configuration.
+
+---
+
+## 1.3.2
+
+- Automatic unattended installation/recovery of sing-box-extended and the
+  Podkop XHTTP patch when XHTTP is enabled.
+
+## 1.3.1
+
+- Universal version-detecting bootstrap added to the two legacy repositories.
+
+## 1.3.0
+
+- Added `precheck_max_nodes` and fastest-node selection after availability
+  testing.
+
+## 1.2.0
+
+- Added country whitelist support with `include_country` and installer
+  `--include`.
+
+## 1.1.0
+
+- Added XHTTP support through sing-box-extended and the Podkop XHTTP patch.
+
+## 1.0.0
+
+- Initial subscription synchronization, protocol/country filtering, real proxy
+  precheck, SHA comparison and rollback.

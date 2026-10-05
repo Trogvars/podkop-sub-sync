@@ -7,11 +7,10 @@ config sync 'main'
         option retry_interval '900'
 
         option send_hwid '0'
-        option enable_xhttp '0'
-
         option enable_vless '1'
         option enable_trojan '1'
         option enable_ss '1'
+        option enable_xhttp '0'
 
         # Whitelist: keep only these countries (repeatable)
         # list include_country 'RU'

@@ -1,5 +1,37 @@
 # CHANGES
 
+## 2.2.0
+
+### Interactive installer
+
+- Installation is interactive by default when a TTY is available.
+- Fresh-install defaults:
+  - XHTTP: **No** (keeps the normal Podkop sing-box; SBE is not installed).
+  - Subscription URL: **skip**.
+  - Excluded country: **RU**.
+  - Sync interval: **86400 seconds**.
+  - Maximum fastest nodes: **20**.
+- Existing installations use their current values as prompt defaults so Enter
+  does not unexpectedly overwrite production configuration.
+- Prompts read from `/dev/tty`, so the menu works with
+  `wget -qO- .../install.sh | sh`.
+- Added `--non-interactive` for automation/Ansible/CI.
+- Added `--disable-xhttp`; `--with-xhttp` remains a legacy alias for
+  `--enable-xhttp`.
+- If a fresh installation has no subscription URL, sync remains disabled until
+  a URL is configured. Explicitly clearing the URL also disables sync.
+
+### Runtime fix
+
+- Final post-restart health-check now accepts both `sing-box` and
+  `sing-box-core`.
+- This fixes false rollback on OpenWrt 24.x compressed SBE: the generated
+  sing-box config could validate successfully while the updater still waited
+  only for a process literally named `sing-box`, then rolled back after
+  20 seconds.
+
+---
+
 ## 2.1.0
 
 ### Changed

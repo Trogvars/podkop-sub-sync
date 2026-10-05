@@ -142,3 +142,25 @@ The pinned upstream SBE installer is driven with `1` + Enter: newest stable
 release and the installer's recommended format. Because the installer script
 itself is pinned, its prompt contract is stable for this project version.
 When updating the pinned revision, this interaction must be reviewed again.
+
+
+### 11. Legacy generated User-Agent migration
+
+**Severity:** low
+
+Legacy installers wrote generated version strings such as
+`podkop-sub-sync-openwrt24/1.3.2` directly into UCI. Preserving that value
+would defeat the new dynamic VERSION-based default.
+
+**Fix:** installer migration removes only recognized generated legacy
+User-Agent values. Arbitrary/custom `user_agent` values are preserved.
+
+### 12. CI previously checked only the host shell
+
+**Severity:** low
+
+A script can parse under Ubuntu's `/bin/sh` but still behave differently on
+OpenWrt BusyBox ash.
+
+**Fix:** CI installs BusyBox and `check.sh` validates every shell file with
+both the host `sh -n` and `busybox ash -n`.

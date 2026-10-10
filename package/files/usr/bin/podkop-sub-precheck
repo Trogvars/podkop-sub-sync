@@ -6,8 +6,8 @@ SEC="main"
 INPUT="${1:-}"
 OUTPUT="${2:-}"
 
-log(){ printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
-die(){ log "ERROR: $*"; exit 1; }
+precheck_log(){ printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
+die(){ precheck_log "ERROR: $*"; exit 1; }
 
 [ -n "$INPUT" ] || die "input file not specified"
 [ -n "$OUTPUT" ] || die "output file not specified"
@@ -20,6 +20,18 @@ done
 
 # shellcheck disable=SC1091
 . /usr/lib/podkop/sing_box_config_facade.sh
+
+# Modern Podkop's facade may emit warnings while decoding links. Its own log()
+# writes to syslog and must not share precheck's stdout logger, because facade
+# output is captured as JSON via command substitution.
+if [ -r /usr/lib/podkop/logging.sh ]; then
+    # shellcheck disable=SC1091
+    . /usr/lib/podkop/logging.sh
+fi
+
+json_valid(){
+    [ -n "$1" ] && printf '%s\n' "$1" | jq -e . >/dev/null 2>&1
+}
 
 cfg_get(){
     pc_key="$1"
@@ -187,7 +199,7 @@ stop_production_singbox(){
 
     production_singbox_running || return 0
 
-    log "WARN: sing-box core still running after Podkop stop; retrying sing-box service stop"
+    precheck_log "WARN: sing-box core still running after Podkop stop; retrying sing-box service stop"
     [ -x /etc/init.d/sing-box ] && /etc/init.d/sing-box stop >/dev/null 2>&1 || true
 
     STOP_WAITED=0
@@ -201,7 +213,7 @@ stop_production_singbox(){
     CORE_PIDS="$(production_singbox_pids)"
     [ -n "$CORE_PIDS" ] || return 0
 
-    log "WARN: sing-box core still running; sending TERM to pid(s): $CORE_PIDS"
+    precheck_log "WARN: sing-box core still running; sending TERM to pid(s): $CORE_PIDS"
     # shellcheck disable=SC2086
     kill $CORE_PIDS 2>/dev/null || true
 
@@ -216,7 +228,7 @@ stop_production_singbox(){
     CORE_PIDS="$(production_singbox_pids)"
     [ -n "$CORE_PIDS" ] || return 0
 
-    log "WARN: sing-box core ignored TERM; sending KILL to pid(s): $CORE_PIDS"
+    precheck_log "WARN: sing-box core ignored TERM; sending KILL to pid(s): $CORE_PIDS"
     # shellcheck disable=SC2086
     kill -9 $CORE_PIDS 2>/dev/null || true
     sleep 1
@@ -227,14 +239,14 @@ stop_production_singbox(){
 restart_podkop_if_stopped(){
     [ "$PODKOP_STOPPED" = 1 ] || return 0
 
-    log "Restoring Podkop after low-memory precheck"
+    precheck_log "Restoring Podkop after low-memory precheck"
     if /etc/init.d/podkop start >/dev/null 2>&1; then
         PODKOP_STOPPED=0
         sleep 2
         return 0
     fi
 
-    log "ERROR: failed to restart Podkop after low-memory precheck"
+    precheck_log "ERROR: failed to restart Podkop after low-memory precheck"
     return 1
 }
 
@@ -250,7 +262,7 @@ cleanup(){
 }
 trap cleanup EXIT INT TERM
 
-log "Checking test URL: $TEST_URL"
+precheck_log "Checking test URL: $TEST_URL"
 
 CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
     --connect-timeout "$CONNECT_TIMEOUT" \
@@ -260,11 +272,11 @@ CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
     "$TEST_URL" 2>/dev/null)"
 
 if ! http_code_ok "$CONTROL_CODE"; then
-    log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000})"
+    precheck_log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000})"
     exit 10
 fi
 
-log "Control URL is available (HTTP $CONTROL_CODE)"
+precheck_log "Control URL is available (HTTP $CONTROL_CODE)"
 
 SBE_VERSION_INFO="$(sing-box version 2>/dev/null || true)"
 MEM_TOTAL_KB="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
@@ -279,21 +291,21 @@ if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
    [ -x /etc/init.d/podkop ]; then
 
     MEM_TOTAL_MB=$((MEM_TOTAL_KB / 1024))
-    log "Low-memory compressed SBE detected (${MEM_TOTAL_MB} MiB RAM)"
-    log "Temporarily stopping Podkop during proxy precheck to avoid OOM"
+    precheck_log "Low-memory compressed SBE detected (${MEM_TOTAL_MB} MiB RAM)"
+    precheck_log "Temporarily stopping Podkop during proxy precheck to avoid OOM"
 
     /etc/init.d/podkop stop >/dev/null 2>&1 || {
-        log "ERROR: failed to stop Podkop for low-memory precheck"
+        precheck_log "ERROR: failed to stop Podkop for low-memory precheck"
         exit 13
     }
     PODKOP_STOPPED=1
 
     if ! stop_production_singbox; then
-        log "ERROR: could not terminate production sing-box/sing-box-core"
+        precheck_log "ERROR: could not terminate production sing-box/sing-box-core"
         exit 13
     fi
 
-    log "Production sing-box stopped for low-memory precheck"
+    precheck_log "Production sing-box stopped for low-memory precheck"
 
     DIRECT_CODE="$(curl $CURL_TLS_OPT -sS \
         --connect-timeout "$CONNECT_TIMEOUT" \
@@ -303,11 +315,11 @@ if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
         "$TEST_URL" 2>/dev/null)"
 
     if ! http_code_ok "$DIRECT_CODE"; then
-        log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
+        precheck_log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
         exit 13
     fi
 
-    log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
+    precheck_log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
 fi
 
 TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
@@ -320,14 +332,14 @@ PARSER_BAD=0
 GLOBAL_INDEX=0
 START=1
 
-log "Starting full proxy precheck"
-log "Candidates : $TOTAL"
-log "Batch size : $BATCH_SIZE"
-log "Timeout    : ${TIMEOUT}s"
-log "Expected   : HTTP $EXPECTED_CODE"
-[ "$MAX_NODES" -gt 0 ] && log "Keep fastest: $MAX_NODES" || log "Keep fastest: unlimited"
-[ "$INSECURE_TLS" = 1 ] && log "TLS verify  : disabled" || log "TLS verify  : enabled"
-log ""
+precheck_log "Starting full proxy precheck"
+precheck_log "Candidates : $TOTAL"
+precheck_log "Batch size : $BATCH_SIZE"
+precheck_log "Timeout    : ${TIMEOUT}s"
+precheck_log "Expected   : HTTP $EXPECTED_CODE"
+[ "$MAX_NODES" -gt 0 ] && precheck_log "Keep fastest: $MAX_NODES" || precheck_log "Keep fastest: unlimited"
+[ "$INSECURE_TLS" = 1 ] && precheck_log "TLS verify  : disabled" || precheck_log "TLS verify  : enabled"
+precheck_log ""
 
 while [ "$START" -le "$TOTAL" ]; do
     END=$((START + BATCH_SIZE - 1))
@@ -367,18 +379,31 @@ while [ "$START" -le "$TOTAL" ]; do
         NEW_CONFIG="$(sing_box_cf_add_proxy_outbound "$config" "$SECTION" "$LINK" "0")"
         PARSER_RC=$?
 
-        if [ "$PARSER_RC" -ne 0 ] || [ -z "$NEW_CONFIG" ]; then
-            log "[$GLOBAL_INDEX/$TOTAL] PARSER FAIL  $NAME"
+        if [ "$PARSER_RC" -ne 0 ] || ! json_valid "$NEW_CONFIG"; then
+            precheck_log "[$GLOBAL_INDEX/$TOTAL] PARSER FAIL  $NAME"
             PARSER_BAD=$((PARSER_BAD + 1))
             BAD=$((BAD + 1))
             continue
         fi
 
-        config="$NEW_CONFIG"
-        config="$(set_outbound_mark "$config" "$OUT_TAG")"
-        config="$(sing_box_cf_add_mixed_inbound_and_route_rule \
-            "$config" "$IN_TAG" "127.0.0.1" "$PORT" "$OUT_TAG")"
+        MARKED_CONFIG="$(set_outbound_mark "$NEW_CONFIG" "$OUT_TAG")"
+        if ! json_valid "$MARKED_CONFIG"; then
+            precheck_log "[$GLOBAL_INDEX/$TOTAL] PARSER FAIL after routing mark  $NAME"
+            PARSER_BAD=$((PARSER_BAD + 1))
+            BAD=$((BAD + 1))
+            continue
+        fi
 
+        ROUTED_CONFIG="$(sing_box_cf_add_mixed_inbound_and_route_rule \
+            "$MARKED_CONFIG" "$IN_TAG" "127.0.0.1" "$PORT" "$OUT_TAG")"
+        if ! json_valid "$ROUTED_CONFIG"; then
+            precheck_log "[$GLOBAL_INDEX/$TOTAL] PARSER FAIL after mixed inbound  $NAME"
+            PARSER_BAD=$((PARSER_BAD + 1))
+            BAD=$((BAD + 1))
+            continue
+        fi
+
+        config="$ROUTED_CONFIG"
         printf '%s\t%s\t%s\n' "$PORT" "$GLOBAL_INDEX" "$LINK" >>"$MAP"
     done <"$BATCH"
 
@@ -396,9 +421,9 @@ while [ "$START" -le "$TOTAL" ]; do
         if [ "$CHECK_RC" -eq 137 ]; then
             MEM_AVAIL_KB="$(awk '/MemAvailable/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
             case "$MEM_AVAIL_KB" in ''|*[!0-9]*) MEM_AVAIL_KB=0 ;; esac
-            log "ERROR: sing-box check was killed (rc=137, likely OOM; MemAvailable=$((MEM_AVAIL_KB / 1024)) MiB)"
+            precheck_log "ERROR: sing-box check was killed (rc=137, likely OOM; MemAvailable=$((MEM_AVAIL_KB / 1024)) MiB)"
         else
-            log "ERROR: temporary config failed validation (rc=$CHECK_RC): $CHECK"
+            precheck_log "ERROR: temporary config failed validation (rc=$CHECK_RC): $CHECK"
         fi
         cp "$CONF" /tmp/podkop-precheck-broken.json
         exit 11
@@ -413,9 +438,9 @@ while [ "$START" -le "$TOTAL" ]; do
 
     if [ "$READY_RC" -ne 0 ]; then
         if [ "$READY_RC" -eq 2 ]; then
-            log "ERROR: temporary sing-box exited before opening mixed inbound"
+            precheck_log "ERROR: temporary sing-box exited before opening mixed inbound"
         else
-            log "ERROR: temporary sing-box did not open mixed inbound 127.0.0.1:${READY_PORT} within 20s"
+            precheck_log "ERROR: temporary sing-box did not open mixed inbound 127.0.0.1:${READY_PORT} within 20s"
         fi
 
         tail -50 "$SBLOG"
@@ -444,10 +469,10 @@ while [ "$START" -le "$TOTAL" ]; do
             MS="$(awk -v t="${TIME:-0}" 'BEGIN{printf "%.0f",t*1000}')"
             printf '%s\t%s\n' "$MS" "$LINK" >>"$RANKED"
             GOOD=$((GOOD + 1))
-            log "[$INDEX/$TOTAL] OK   ${MS}ms  $NAME"
+            precheck_log "[$INDEX/$TOTAL] OK   ${MS}ms  $NAME"
         else
             BAD=$((BAD + 1))
-            log "[$INDEX/$TOTAL] FAIL HTTP=${CODE} rc=${CURL_RC}  $NAME"
+            precheck_log "[$INDEX/$TOTAL] FAIL HTTP=${CODE} rc=${CURL_RC}  $NAME"
         fi
     done <"$MAP"
 
@@ -466,12 +491,12 @@ REQUIRED_NODES="$MIN_NODES"
 [ "$TOTAL" -lt "$REQUIRED_NODES" ] && REQUIRED_NODES="$TOTAL"
 
 [ "$GOOD" -ge "$REQUIRED_NODES" ] || {
-    log "ERROR: only $GOOD nodes passed; minimum $REQUIRED_NODES"
+    precheck_log "ERROR: only $GOOD nodes passed; minimum $REQUIRED_NODES"
     exit 20
 }
 
 [ "$PERCENT" -ge "$MIN_PERCENT" ] || {
-    log "ERROR: only ${PERCENT}% passed; minimum ${MIN_PERCENT}%"
+    precheck_log "ERROR: only ${PERCENT}% passed; minimum ${MIN_PERCENT}%"
     exit 21
 }
 
@@ -492,25 +517,25 @@ head -n "$SELECTED" "$SORTED_RANKED" |
 
 ACTUAL_SELECTED="$(wc -l <"$OUTPUT" | tr -d ' ')"
 
-log ""
-log "========================================"
-log "Proxy precheck finished"
-log "Total       : $TOTAL"
-log "Working     : $GOOD"
-log "Failed      : $BAD"
-log "Parser fail : $PARSER_BAD"
-log "Success     : ${PERCENT}%"
-log "Selected    : $ACTUAL_SELECTED"
-[ -n "$FASTEST_MS" ] && log "Fastest     : ${FASTEST_MS}ms"
-[ -n "$SLOWEST_SELECTED_MS" ] && log "Cutoff      : ${SLOWEST_SELECTED_MS}ms"
-log "========================================"
+precheck_log ""
+precheck_log "========================================"
+precheck_log "Proxy precheck finished"
+precheck_log "Total       : $TOTAL"
+precheck_log "Working     : $GOOD"
+precheck_log "Failed      : $BAD"
+precheck_log "Parser fail : $PARSER_BAD"
+precheck_log "Success     : ${PERCENT}%"
+precheck_log "Selected    : $ACTUAL_SELECTED"
+[ -n "$FASTEST_MS" ] && precheck_log "Fastest     : ${FASTEST_MS}ms"
+[ -n "$SLOWEST_SELECTED_MS" ] && precheck_log "Cutoff      : ${SLOWEST_SELECTED_MS}ms"
+precheck_log "========================================"
 
 if [ "$DEFER_RESTORE" = 1 ] && [ "$PODKOP_STOPPED" = 1 ]; then
     if [ -n "$STOPPED_MARKER" ]; then
         : >"$STOPPED_MARKER"
     fi
     PODKOP_STOPPED=0
-    log "Leaving Podkop stopped for updater final apply"
+    precheck_log "Leaving Podkop stopped for updater final apply"
 fi
 
 exit 0

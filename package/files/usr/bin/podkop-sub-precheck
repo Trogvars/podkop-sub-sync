@@ -63,7 +63,7 @@ TEST_URL="$(cfg_get precheck_url 'https://www.gstatic.com/generate_204')"
 EXPECTED_CODE="$(cfg_get precheck_http_code 204)"
 TIMEOUT="$(cfg_get precheck_timeout 7)"
 CONNECT_TIMEOUT="$(cfg_get precheck_connect_timeout 3)"
-BATCH_SIZE="$(cfg_get precheck_batch_size 6)"
+BATCH_SIZE="${PSS_PRECHECK_BATCH_SIZE:-$(cfg_get precheck_batch_size 6)}"
 BASE_PORT="$(cfg_get precheck_base_port 39000)"
 MIN_NODES="$(cfg_get precheck_min_nodes 3)"
 MIN_PERCENT="$(cfg_get precheck_min_percent 20)"
@@ -296,15 +296,27 @@ case "$MEM_TOTAL_KB" in
     ''|*[!0-9]*) MEM_TOTAL_KB=0 ;;
 esac
 
+FORCE_ISOLATED="${PSS_PRECHECK_FORCE_STOP:-0}"
+LOW_MEMORY_SBE=0
+
 if printf '%s\n' "$SBE_VERSION_INFO" | grep -q 'UPX-compressed' &&
    [ "$MEM_TOTAL_KB" -gt 0 ] &&
-   [ "$MEM_TOTAL_KB" -lt 393216 ] &&
+   [ "$MEM_TOTAL_KB" -lt 393216 ]; then
+    LOW_MEMORY_SBE=1
+fi
+
+if { [ "$LOW_MEMORY_SBE" = 1 ] || [ "$FORCE_ISOLATED" = 1 ]; } &&
    production_singbox_running &&
    [ -x /etc/init.d/podkop ]; then
 
-    MEM_TOTAL_MB=$((MEM_TOTAL_KB / 1024))
-    precheck_log "Low-memory compressed SBE detected (${MEM_TOTAL_MB} MiB RAM)"
-    precheck_log "Temporarily stopping Podkop during proxy precheck to avoid OOM"
+    if [ "$FORCE_ISOLATED" = 1 ]; then
+        precheck_log "Isolated precheck requested after previous sing-box crash"
+        precheck_log "Temporarily stopping Podkop to avoid production/test engine overlap"
+    else
+        MEM_TOTAL_MB=$((MEM_TOTAL_KB / 1024))
+        precheck_log "Low-memory compressed SBE detected (${MEM_TOTAL_MB} MiB RAM)"
+        precheck_log "Temporarily stopping Podkop during proxy precheck to avoid OOM"
+    fi
 
     /etc/init.d/podkop stop >/dev/null 2>&1 || {
         precheck_log "ERROR: failed to stop Podkop for low-memory precheck"
@@ -364,6 +376,8 @@ while [ "$START" -le "$TOTAL" ]; do
 
     sed -n "${START},${END}p" "$INPUT" >"$BATCH"
     : >"$MAP"
+
+    [ "$BATCH_SIZE" -eq 1 ] && precheck_log "Isolated batch: node ${START}/${TOTAL}"
 
     config='{"log":{},"dns":{},"ntp":{},"certificate":{},"endpoints":[],"inbounds":[],"outbounds":[],"route":{},"services":[],"experimental":{}}'
     config="$(sing_box_cm_configure_log "$config" false error false)"

@@ -1,5 +1,27 @@
 # CHANGES
 
+## 2.3.1
+
+### Fixed
+
+- Fixed precheck JSON corruption with modern Podkop 0.7.23 and
+  `podkop-engine` XHTTP decoding.
+- Podkop's modern facade may log warnings while
+  `sing-box tools decode-link` parses a link. Precheck previously supplied
+  its own stdout `log()`, so those warnings were captured together with the
+  JSON returned by `sing_box_cf_add_proxy_outbound` and then fed into `jq`.
+  This produced `jq: parse error: Invalid numeric literal`, parser failures,
+  and eventually an empty/broken temporary batch config.
+- Precheck now uses a dedicated `precheck_log()` for its console output and
+  loads Podkop's native `logging.sh` for facade internals, keeping parser
+  diagnostics out of JSON stdout.
+- Each parser stage is now JSON-validated before it replaces the current batch
+  configuration. A malformed link can be counted as a parser failure without
+  poisoning the remaining nodes in the batch.
+- CI now guards the logger separation and parser JSON validation.
+
+---
+
 ## 2.3.0
 
 ### podkop-engine support

@@ -19,6 +19,9 @@
   configuration. A malformed link can be counted as a parser failure without
   poisoning the remaining nodes in the batch.
 - CI now guards the logger separation and parser JSON validation.
+- Older Podkop layouts without `/usr/lib/podkop/logging.sh` remain supported:
+  precheck installs a syslog-only fallback `log()` for facade diagnostics, so
+  legacy `podkop-xhttp-patch + sing-box-extended` setups keep working.
 
 ---
 

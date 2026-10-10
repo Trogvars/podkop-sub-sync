@@ -255,7 +255,15 @@ keeps XHTTP VLESS links while filtering ordinary VLESS links.
 If XHTTP is enabled, the project first checks the capabilities of the
 currently installed engine and Podkop parser.
 
-Supported engines:
+Supported combinations:
+
+| Podkop | XHTTP parser | Engine | Supported |
+| --- | --- | --- | --- |
+| 0.7.22 and older | `podkop-xhttp-patch` / `xhttp)` | `sing-box-extended` | yes |
+| 0.7.23+ | native `xhttp | splithttp)` | `podkop-engine` / `podkop-engine-full` r11+ | yes |
+| 0.7.23+ | native XHTTP parser | `sing-box-extended` | yes |
+
+Supported engines are detected by capability:
 
 - `podkop-engine` / `podkop-engine-full` r11+ when `sing-box version`
   advertises `Features: ... transport.xhttp ...`;

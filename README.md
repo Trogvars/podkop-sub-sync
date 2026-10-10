@@ -34,7 +34,7 @@ Example:
 ========================================
   Podkop Subscription Sync setup
 ========================================
-Enable XHTTP and install sing-box-extended? [y/N]:
+Enable XHTTP support? [y/N]:
 Subscription URL [Enter = skip]:
 Exclude country/countries [RU] (- = none):
 Sync interval in seconds [86400]:
@@ -252,15 +252,32 @@ option enable_xhttp '1'
 
 keeps XHTTP VLESS links while filtering ordinary VLESS links.
 
-If XHTTP is enabled, the project automatically checks and repairs:
+If XHTTP is enabled, the project first checks the capabilities of the
+currently installed engine and Podkop parser.
 
-1. `sing-box-extended`
-2. the Podkop `xhttp)` parser patch
+Supported engines:
 
-The helper scripts are pinned to reviewed Git commits. The pinned SBE installer
-selects the newest stable SBE release.
+- `podkop-engine` / `podkop-engine-full` r11+ when `sing-box version`
+  advertises `Features: ... transport.xhttp ...`;
+- `sing-box-extended`.
 
-Format selection is intentionally platform-specific:
+A compatible installed engine is kept as-is. In particular, installing
+`podkop-engine` does **not** cause podkop-sub-sync to replace it with SBE.
+
+Modern Podkop (0.7.23+) already handles `xhttp | splithttp)` itself, so no
+parser patch is installed. The legacy `podkop-xhttp-patch` is used only for an
+older Podkop parser that really lacks XHTTP support.
+
+If the current engine has no XHTTP capability and it is ordinary stock
+`sing-box`, podkop-sub-sync can still install the pinned SBE helper
+automatically. If `podkop-engine` itself is installed but does not advertise
+`transport.xhttp` (old r<11 build), the updater refuses to replace it and asks
+for a podkop-engine upgrade instead.
+
+The helper scripts are pinned to reviewed Git commits. When SBE is actually
+needed, the pinned installer selects the newest stable SBE release.
+
+SBE format selection is intentionally platform-specific:
 
 - OpenWrt 24.x / `opkg`: compressed SBE build is selected explicitly to avoid
   tmpfs/flash exhaustion while unpacking the much larger normal build.

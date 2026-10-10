@@ -99,17 +99,3 @@ grep -Fq 'json_valid "$NEW_CONFIG"' "$PRECHECK" || {
     exit 1
 }
 echo "Checks passed for podkop-sub-sync $ROOT_VERSION"
- "$PRECHECK" || {
-    echo "ERROR: precheck must load Podkop logging for facade calls"
-    exit 1
-}
-if grep -q '^log(){ printf ' "$PRECHECK"; then
-    echo "ERROR: precheck stdout log() would contaminate facade JSON"
-    exit 1
-fi
-grep -q 'json_valid "$NEW_CONFIG"' "$PRECHECK" || {
-    echo "ERROR: parser JSON validation guard is missing"
-    exit 1
-}
-
-echo "Checks passed for podkop-sub-sync $ROOT_VERSION"

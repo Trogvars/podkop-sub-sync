@@ -27,6 +27,18 @@ done
 if [ -r /usr/lib/podkop/logging.sh ]; then
     # shellcheck disable=SC1091
     . /usr/lib/podkop/logging.sh
+else
+    # Compatibility with older Podkop layouts. Facade diagnostics must never
+    # go to stdout because sing_box_cf_add_proxy_outbound output is captured as
+    # JSON by command substitution.
+    log(){
+        podkop_log_message="$1"
+        podkop_log_level="${2:-info}"
+
+        if command -v logger >/dev/null 2>&1; then
+            logger -t podkop "[${podkop_log_level}] ${podkop_log_message}"
+        fi
+    }
 fi
 
 json_valid(){

@@ -349,6 +349,21 @@ if [ "$PRECHECK_ENABLED" = 1 ]; then
         /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
     RC=$?
 
+    if [ "$RC" -eq 139 ]; then
+        log "WARN: proxy precheck crashed with SIGSEGV (code 139)"
+        log "WARN: retrying in isolated mode: Podkop stopped, batch size 1"
+
+        rm -f "$PRECHECK_STOPPED_MARKER"
+        : >"$PRECHECKED"
+
+        PSS_PRECHECK_DEFER_RESTORE=1 \
+        PSS_PRECHECK_STOPPED_MARKER="$PRECHECK_STOPPED_MARKER" \
+        PSS_PRECHECK_FORCE_STOP=1 \
+        PSS_PRECHECK_BATCH_SIZE=1 \
+            /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
+        RC=$?
+    fi
+
     [ "$RC" -eq 0 ] || {
         log "ERROR: proxy precheck failed (code $RC); current config unchanged"
         exit 4

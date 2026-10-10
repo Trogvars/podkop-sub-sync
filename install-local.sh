@@ -260,7 +260,7 @@ if [ "$INTERACTIVE" = 1 ]; then
     echo "========================================"
 
     if [ "$XHTTP_SET" = 0 ]; then
-        XHTTP_VALUE="$(prompt_yes_no "Enable XHTTP and install sing-box-extended?" "$CURRENT_XHTTP")"
+        XHTTP_VALUE="$(prompt_yes_no "Enable XHTTP support?" "$CURRENT_XHTTP")"
         XHTTP_SET=1
     fi
 

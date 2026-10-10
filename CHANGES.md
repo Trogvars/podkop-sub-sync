@@ -1,5 +1,28 @@
 # CHANGES
 
+## 2.3.0
+
+### podkop-engine support
+
+- XHTTP dependency detection is now capability-based instead of requiring the
+  engine name to contain `extended`.
+- `podkop-engine` and `podkop-engine-full` r11+ are accepted natively when
+  `sing-box version` advertises `Features: ... transport.xhttp ...`.
+- An installed compatible podkop-engine is kept untouched; podkop-sub-sync no
+  longer tries to replace it with sing-box-extended.
+- If an old podkop-engine is installed but does not advertise
+  `transport.xhttp`, the updater refuses an automatic engine replacement and
+  asks for podkop-engine to be upgraded instead.
+- Modern Podkop parser syntax `xhttp | splithttp)` is recognized in addition
+  to the legacy patched `xhttp)` form. Podkop 0.7.23+ therefore does not
+  receive the obsolete parser patch.
+- The interactive installer prompt is now engine-neutral:
+  `Enable XHTTP support?`.
+- CI includes regression checks for podkop-engine feature detection, both Podkop
+  parser forms, sing-box-extended compatibility, and stock sing-box rejection.
+
+---
+
 ## 2.2.2
 
 ### Fixed

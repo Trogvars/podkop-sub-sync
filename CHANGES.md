@@ -1,5 +1,25 @@
 # CHANGES
 
+## 2.3.2
+
+### Crash recovery
+
+- A precheck process that exits with code `139` (SIGSEGV) no longer causes an
+  immediate subscription-update failure.
+- The updater automatically retries the full precheck in isolated mode:
+  Podkop/production sing-box is stopped temporarily and precheck batch size is
+  forced to 1.
+- This removes production/test engine overlap and isolates a crash to a single
+  proxy candidate.
+- The normal fast path remains unchanged: batch size from UCI is used unless a
+  SIGSEGV actually occurs.
+- Current Podkop configuration remains untouched unless the retry completes
+  successfully.
+- Isolated mode logs the individual node number before each retry batch to make
+  any engine/link crash reproducible.
+
+---
+
 ## 2.3.1
 
 ### Fixed

@@ -1,6 +1,7 @@
 #!/bin/ash
 
 PSS_VERSION_FILE="/usr/share/podkop-sub-sync/VERSION"
+PSS_PODKOP_FACADE="${PSS_PODKOP_FACADE:-/usr/lib/podkop/sing_box_config_facade.sh}"
 
 # Pin the helper scripts themselves for reproducibility. The SBE helper still
 # selects the latest stable sing-box-extended release at runtime.
@@ -78,12 +79,12 @@ pss_has_xhttp_engine(){
 }
 
 pss_has_xhttp_parser(){
-    [ -r /usr/lib/podkop/sing_box_config_facade.sh ] || return 1
+    [ -r "$PSS_PODKOP_FACADE" ] || return 1
 
     # Legacy podkop-xhttp-patch used "xhttp)".
     # Modern Podkop (0.7.23+) handles "xhttp | splithttp)" itself.
     grep -Eq '^[[:space:]]*xhttp([[:space:]]*\|[[:space:]]*[^)]*)?\)' \
-        /usr/lib/podkop/sing_box_config_facade.sh
+        "$PSS_PODKOP_FACADE"
 }
 
 pss_ensure_xhttp_stack(){

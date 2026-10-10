@@ -90,7 +90,7 @@ grep -Fq '    . /usr/lib/podkop/logging.sh' "$PRECHECK" || {
     echo "ERROR: precheck must load Podkop logging for facade calls"
     exit 1
 }
-if grep -Fq 'log(){ printf ' "$PRECHECK"; then
+if grep -q '^log(){ printf ' "$PRECHECK"; then
     echo "ERROR: precheck stdout log() would contaminate facade JSON"
     exit 1
 fi

@@ -40,18 +40,63 @@ pss_fetch(){
     [ -s "$pss_dst" ]
 }
 
+pss_singbox_version(){
+    sing-box version 2>/dev/null || true
+}
+
 pss_has_extended(){
-    sing-box version 2>/dev/null | grep -qi 'extended'
+    pss_singbox_version | grep -qi 'extended'
+}
+
+pss_has_podkop_engine(){
+    if command -v apk >/dev/null 2>&1; then
+        apk info -e podkop-engine >/dev/null 2>&1 ||
+            apk info -e podkop-engine-full >/dev/null 2>&1
+        return $?
+    fi
+
+    if command -v opkg >/dev/null 2>&1; then
+        opkg status podkop-engine 2>/dev/null | grep -q '^Status: .* installed' ||
+            opkg status podkop-engine-full 2>/dev/null | grep -q '^Status: .* installed'
+        return $?
+    fi
+
+    pss_singbox_version | grep -qi -- '-pdk-r'
+}
+
+pss_has_xhttp_engine(){
+    pss_version_info="$(pss_singbox_version)"
+
+    # podkop-engine r11+ deliberately exposes machine-readable capabilities.
+    # Prefer this over package/version guessing.
+    printf '%s\n' "$pss_version_info" |
+        grep -Eq '^Features: .*transport\.xhttp([,[:space:]]|$)' &&
+        return 0
+
+    # Compatibility with sing-box-extended, which predates the Features line.
+    printf '%s\n' "$pss_version_info" | grep -qi 'extended'
 }
 
 pss_has_xhttp_parser(){
-    [ -r /usr/lib/podkop/sing_box_config_facade.sh ] &&
-        grep -q '^[[:space:]]*xhttp)' /usr/lib/podkop/sing_box_config_facade.sh
+    [ -r /usr/lib/podkop/sing_box_config_facade.sh ] || return 1
+
+    # Legacy podkop-xhttp-patch used "xhttp)".
+    # Modern Podkop (0.7.23+) handles "xhttp | splithttp)" itself.
+    grep -Eq '^[[:space:]]*xhttp([[:space:]]*\|[[:space:]]*[^)]*)?\)' \
+        /usr/lib/podkop/sing_box_config_facade.sh
 }
 
 pss_ensure_xhttp_stack(){
-    if ! pss_has_extended; then
-        pss_log "XHTTP: sing-box-extended missing; installing automatically"
+    if pss_has_xhttp_engine; then
+        pss_log "XHTTP: current sing-box already provides transport.xhttp"
+    else
+        if pss_has_podkop_engine; then
+            pss_log "ERROR: installed podkop-engine does not advertise transport.xhttp"
+            pss_log "ERROR: update podkop-engine to r11+ (recommended: current release) or disable XHTTP"
+            return 1
+        fi
+
+        pss_log "XHTTP: compatible XHTTP engine missing; installing sing-box-extended automatically"
 
         pss_fetch "$PSS_SB_EXT_URL" /tmp/podkop-sub-sync-sb-ext.sh || {
             pss_log "ERROR: failed to download pinned sing-box-extended installer"
@@ -86,8 +131,8 @@ pss_ensure_xhttp_stack(){
         }
     fi
 
-    pss_has_extended || {
-        pss_log "ERROR: sing-box-extended is still not active after installation"
+    pss_has_xhttp_engine || {
+        pss_log "ERROR: no XHTTP-capable sing-box is active after dependency setup"
         return 1
     }
 
@@ -111,6 +156,10 @@ pss_ensure_xhttp_stack(){
         return 1
     }
 
-    pss_log "XHTTP dependencies ready: $(sing-box version 2>/dev/null | head -n 1)"
+    pss_engine_name="sing-box"
+    pss_has_podkop_engine && pss_engine_name="podkop-engine"
+    pss_has_extended && pss_engine_name="sing-box-extended"
+
+    pss_log "XHTTP dependencies ready: ${pss_engine_name}; $(pss_singbox_version | head -n 1)"
     return 0
 }

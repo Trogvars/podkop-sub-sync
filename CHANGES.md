@@ -1,5 +1,18 @@
 # CHANGES
 
+## 2.5.2
+
+### LuCI version visibility
+
+- Display the installed runtime version directly in the main LuCI page title
+  (`Podkop Subscription Sync vX.Y.Z`) instead of relying on the service panel.
+- Keep the version read from `/usr/share/podkop-sub-sync/VERSION`, avoiding a
+  hard-coded LuCI version number.
+- Add regression coverage for version visibility in the LuCI map header.
+- The direct installer continues to preserve existing service state.
+
+---
+
 ## 2.5.1
 
 ### Background service control and version display

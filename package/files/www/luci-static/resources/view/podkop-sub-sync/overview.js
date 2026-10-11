@@ -18,12 +18,6 @@ function addIntervalValues(o) {
 	o.datatype = 'uinteger';
 }
 
-function modalTabOption(section) {
-	var args = Array.prototype.slice.call(arguments, 1);
-	var o = section.taboption.apply(section, args);
-	o.modalonly = true;
-	return o;
-}
 function addRetryValues(o) {
 	o.value('60', _('1 minute'));
 	o.value('300', _('5 minutes'));
@@ -75,16 +69,12 @@ return view.extend({
 		});
 
 		m = new form.Map('podkop-sub-sync', _('Podkop Subscription Sync'),
-			_('One configuration file is used for all subscriptions. The sync section name must match the Podkop section name. Eligible Podkop proxy sections: %s').format(eligible.length ? eligible.join(', ') : _('none')));
+			_('One configuration file is used for all subscriptions. Each Podkop section is shown as a vertical block with all settings visible. The sync section name must match the Podkop section name. Eligible Podkop proxy sections: %s').format(eligible.length ? eligible.join(', ') : _('none')));
 
-		s = m.section(form.GridSection, 'sync', _('Podkop sections'));
+		s = m.section(form.TypedSection, 'sync', _('Podkop sections'));
 		s.anonymous = false;
 		s.addremove = true;
-		s.sortable = false;
-		s.nodescriptions = true;
 		s.addbtntitle = _('Add Podkop section');
-		// Keep the overview narrow. All configuration fields are rendered
-		// vertically in the section edit modal instead of as table columns.
 
 		s.sectiontitle = function(section_id) {
 			var p = proxyTargets[section_id];
@@ -95,7 +85,7 @@ return view.extend({
 		};
 
 		s.renderSectionAdd = function(extra_class) {
-			var el = form.GridSection.prototype.renderSectionAdd.apply(this, arguments),
+			var el = form.TypedSection.prototype.renderSectionAdd.apply(this, arguments),
 				nameEl = el.querySelector('.cbi-section-create-name');
 
 			ui.addValidator(nameEl, 'uciname', true, function(v) {
@@ -112,20 +102,13 @@ return view.extend({
 			return el;
 		};
 
-		s.tab('general', _('General'));
-		s.tab('protocols', _('Protocols'));
-		s.tab('countries', _('Countries'));
-		s.tab('precheck', _('Precheck'));
-		s.tab('advanced', _('Advanced'));
 
-		o = modalTabOption(s, 'general', form.Flag, 'enabled', _('Enabled'));
+		o = s.option(form.Flag, 'enabled', _('Enabled'));
 		o.default = '0';
 		o.rmempty = false;
-		o.modalonly = false;
 		o.editable = true;
 
-		o = modalTabOption(s, 'general', form.DummyValue, '_podkop_section', _('Podkop section'));
-		o.modalonly = true;
+		o = s.option(form.DummyValue, '_podkop_section', _('Podkop section'));
 		o.cfgvalue = function(section_id) {
 			var p = proxyTargets[section_id];
 			if (!p)
@@ -133,29 +116,25 @@ return view.extend({
 			return '%s (%s)'.format(section_id, p.proxy_config_type || 'proxy');
 		};
 
-		o = modalTabOption(s, 'general', form.Value, 'url', _('Subscription URL'));
+		o = s.option(form.Value, 'url', _('Subscription URL'));
 		o.password = true;
 		o.rmempty = true;
 		o.placeholder = 'https://example.com/sub/...';
-		o.modalonly = true;
 
-		o = modalTabOption(s, 'general', form.ListValue, 'interval', _('Sync interval'));
+		o = s.option(form.ListValue, 'interval', _('Sync interval'));
 		addIntervalValues(o);
 		o.default = '86400';
 		o.rmempty = false;
-		o.modalonly = false;
 
-		o = modalTabOption(s, 'general', form.ListValue, 'retry_interval', _('Retry interval'));
+		o = s.option(form.ListValue, 'retry_interval', _('Retry interval'));
 		addRetryValues(o);
 		o.default = '900';
 		o.rmempty = false;
-		o.modalonly = true;
 
-		o = modalTabOption(s, 'general', form.Button, '_sync_now', _('Sync now'),
+		o = s.option(form.Button, '_sync_now', _('Sync now'),
 			_('Runs this Podkop section immediately. Save pending changes first.'));
 		o.inputtitle = _('Run sync');
 		o.inputstyle = 'apply';
-		o.modalonly = true;
 		o.onclick = function(section_id) {
 			return fs.exec('/usr/bin/podkop-sub-sync', [ section_id ]).then(function(res) {
 				if (res.code === 0)
@@ -167,43 +146,43 @@ return view.extend({
 			});
 		};
 
-		o = modalTabOption(s, 'protocols', form.Flag, 'enable_vless', _('VLESS'));
+		o = s.option(form.Flag, 'enable_vless', _('VLESS'));
 		o.default = '1';
 		o.rmempty = false;
 
-		o = modalTabOption(s, 'protocols', form.Flag, 'enable_xhttp', _('XHTTP'));
+		o = s.option(form.Flag, 'enable_xhttp', _('XHTTP'));
 		o.default = '0';
 		o.rmempty = false;
 		o.description = _('XHTTP is selectable independently from ordinary VLESS.');
 
-		o = modalTabOption(s, 'protocols', form.Flag, 'enable_trojan', _('Trojan'));
+		o = s.option(form.Flag, 'enable_trojan', _('Trojan'));
 		o.default = '1';
 		o.rmempty = false;
 
-		o = modalTabOption(s, 'protocols', form.Flag, 'enable_ss', _('Shadowsocks'));
+		o = s.option(form.Flag, 'enable_ss', _('Shadowsocks'));
 		o.default = '1';
 		o.rmempty = false;
 
-		o = modalTabOption(s, 'countries', form.DynamicList, 'include_country', _('Include countries'),
+		o = s.option(form.DynamicList, 'include_country', _('Include countries'),
 			_('Whitelist. If non-empty, only these two-letter country codes are kept.'));
 		addCountrySuggestions(o);
 		o.datatype = 'list(string)';
 
-		o = modalTabOption(s, 'countries', form.DynamicList, 'exclude_country', _('Exclude countries'),
+		o = s.option(form.DynamicList, 'exclude_country', _('Exclude countries'),
 			_('Blacklist applied after the include list.'));
 		addCountrySuggestions(o);
 		o.datatype = 'list(string)';
 
-		o = modalTabOption(s, 'precheck', form.Flag, 'precheck_enabled', _('Enable real proxy precheck'));
+		o = s.option(form.Flag, 'precheck_enabled', _('Enable real proxy precheck'));
 		o.default = '1';
 		o.rmempty = false;
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_url', _('Test URL'));
+		o = s.option(form.Value, 'precheck_url', _('Test URL'));
 		o.default = 'https://www.gstatic.com/generate_204';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.ListValue, 'precheck_http_code', _('Expected HTTP code'));
+		o = s.option(form.ListValue, 'precheck_http_code', _('Expected HTTP code'));
 		o.value('204', '204');
 		o.value('200', '200');
 		o.value('any', _('Any 2xx/3xx/4xx'));
@@ -212,69 +191,69 @@ return view.extend({
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_connect_timeout', _('Connect timeout (s)'));
+		o = s.option(form.Value, 'precheck_connect_timeout', _('Connect timeout (s)'));
 		o.datatype = 'range(1,120)';
 		o.default = '3';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_timeout', _('Total timeout (s)'));
+		o = s.option(form.Value, 'precheck_timeout', _('Total timeout (s)'));
 		o.datatype = 'range(1,300)';
 		o.default = '7';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_batch_size', _('Batch size'));
+		o = s.option(form.Value, 'precheck_batch_size', _('Batch size'));
 		o.datatype = 'range(1,64)';
 		o.default = '6';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_base_port', _('Base test port'));
+		o = s.option(form.Value, 'precheck_base_port', _('Base test port'));
 		o.datatype = 'port';
 		o.default = '39000';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_min_nodes', _('Minimum working nodes'));
+		o = s.option(form.Value, 'precheck_min_nodes', _('Minimum working nodes'));
 		o.datatype = 'uinteger';
 		o.default = '3';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_min_percent', _('Minimum success (%)'));
+		o = s.option(form.Value, 'precheck_min_percent', _('Minimum success (%)'));
 		o.datatype = 'range(0,100)';
 		o.default = '20';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_max_nodes', _('Keep fastest nodes'));
+		o = s.option(form.Value, 'precheck_max_nodes', _('Keep fastest nodes'));
 		o.datatype = 'uinteger';
 		o.default = '20';
 		o.rmempty = false;
 		o.description = _('0 keeps all working nodes.');
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Flag, 'precheck_insecure_tls', _('Disable TLS verification'));
+		o = s.option(form.Flag, 'precheck_insecure_tls', _('Disable TLS verification'));
 		o.default = '0';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'precheck', form.Value, 'precheck_dns_server', _('Precheck DNS server'));
+		o = s.option(form.Value, 'precheck_dns_server', _('Precheck DNS server'));
 		o.datatype = 'ipaddr';
 		o.placeholder = _('Podkop bootstrap DNS');
 		o.rmempty = true;
 		o.depends('precheck_enabled', '1');
 
-		o = modalTabOption(s, 'advanced', form.Flag, 'send_hwid', _('Send HWID headers'));
+		o = s.option(form.Flag, 'send_hwid', _('Send HWID headers'));
 		o.default = '0';
 		o.rmempty = false;
 
-		o = modalTabOption(s, 'advanced', form.Value, 'hwid', _('HWID override'));
+		o = s.option(form.Value, 'hwid', _('HWID override'));
 		o.rmempty = true;
 		o.depends('send_hwid', '1');
 
-		o = modalTabOption(s, 'advanced', form.Value, 'user_agent', _('HTTP User-Agent'));
+		o = s.option(form.Value, 'user_agent', _('HTTP User-Agent'));
 		o.rmempty = true;
 		o.placeholder = _('Automatic versioned default');
 

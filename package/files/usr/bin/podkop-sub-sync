@@ -124,14 +124,6 @@ acquire_lock(){
     return 0
 }
 
-ENABLED="$(cfg_get enabled 0)"
-[ "$ENABLED" = 1 ] || { log "Sync disabled"; exit 0; }
-
-acquire_lock
-LOCK_RC=$?
-[ "$LOCK_RC" -eq 2 ] && exit 75
-[ "$LOCK_RC" -eq 0 ] || exit 1
-
 case "$SEC" in
     ''|*[!A-Za-z0-9_]*)
         log "ERROR: invalid sync section name: $SEC"
@@ -144,6 +136,14 @@ SECTION_TYPE="$(uci -q get "${CFG}.${SEC}" 2>/dev/null || true)"
     log "ERROR: sync section '$SEC' does not exist"
     exit 2
 }
+
+ENABLED="$(cfg_get enabled 0)"
+[ "$ENABLED" = 1 ] || { log "Sync disabled"; exit 0; }
+
+acquire_lock
+LOCK_RC=$?
+[ "$LOCK_RC" -eq 2 ] && exit 75
+[ "$LOCK_RC" -eq 0 ] || exit 1
 
 TMP="$(mktemp -d /tmp/podkop-sub.XXXXXX)" || {
     rm -rf "$LOCK"

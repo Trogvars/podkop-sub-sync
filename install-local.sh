@@ -567,6 +567,8 @@ if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main.enable_ss='1'
     uci set podkop-sub-sync.main.enable_xhttp='0'
     uci set podkop-sub-sync.main.precheck_enabled='1'
+    uci set podkop-sub-sync.main.precheck_target='gstatic'
+    uci set podkop-sub-sync.main.precheck_youtube_second_stage='0'
     uci set podkop-sub-sync.main.precheck_url='https://www.gstatic.com/generate_204'
     uci set podkop-sub-sync.main.precheck_http_code='204'
     uci set podkop-sub-sync.main.precheck_connect_timeout='3'
@@ -614,6 +616,26 @@ do
         echo "WARNING: profile $sync_sec had legacy target=$legacy_target; 2.4.0 maps it to podkop.$sync_sec"
         uci -q delete "podkop-sub-sync.${sync_sec}.target" || true
     fi
+
+    current_precheck_target="$(uci -q get "podkop-sub-sync.${sync_sec}.precheck_target" 2>/dev/null || true)"
+    if [ -z "$current_precheck_target" ]; then
+        legacy_precheck_url="$(uci -q get "podkop-sub-sync.${sync_sec}.precheck_url" 2>/dev/null || true)"
+        case "$legacy_precheck_url" in
+            ''|https://www.gstatic.com/generate_204)
+                current_precheck_target='gstatic'
+                ;;
+            https://cp.cloudflare.com/generate_204|http://cp.cloudflare.com/generate_204)
+                current_precheck_target='cloudflare'
+                ;;
+            *)
+                current_precheck_target='custom'
+                ;;
+        esac
+        uci set "podkop-sub-sync.${sync_sec}.precheck_target=${current_precheck_target}"
+    fi
+
+    uci -q get "podkop-sub-sync.${sync_sec}.precheck_youtube_second_stage" >/dev/null 2>&1 ||
+        uci set "podkop-sub-sync.${sync_sec}.precheck_youtube_second_stage=0"
 done
 
 [ "$INTERVAL_SET" = 1 ] && uci set "podkop-sub-sync.main.interval=${INTERVAL}"

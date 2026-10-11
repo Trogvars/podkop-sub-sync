@@ -203,8 +203,8 @@ config sync 'main'
         # list exclude_country 'RU'
 
         option precheck_enabled '1'
-        option precheck_url 'https://www.gstatic.com/generate_204'
-        option precheck_http_code '204'
+        option precheck_target 'gstatic'
+        option precheck_youtube_second_stage '0'
         option precheck_connect_timeout '3'
         option precheck_timeout '7'
         option precheck_batch_size '6'
@@ -356,6 +356,29 @@ abc0248d234fefe95e6ed787df6fb71df2b8e921
 moix89/podkop-xhttp-patch:
 0b7be3f7504e2903c5bd8487075c8c11de459553
 ```
+
+### Precheck targets
+
+The primary reachability check is selected with:
+
+```text
+option precheck_target 'gstatic'      # https://www.gstatic.com/generate_204
+option precheck_target 'cloudflare'   # https://cp.cloudflare.com/generate_204
+```
+
+Both built-in endpoints must return HTTP 204. The primary check is also used
+for latency ranking.
+
+YouTube can be enabled as an optional second-stage filter:
+
+```text
+option precheck_youtube_second_stage '1'
+```
+
+When enabled, a node is accepted only if the primary check succeeds and
+`https://www.youtube.com/generate_204` also returns HTTP 204 through the same
+proxy. YouTube latency is logged for diagnostics but does not replace the
+primary latency used for fastest-node ranking.
 
 ### Precheck TLS
 

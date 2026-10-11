@@ -98,4 +98,19 @@ grep -Fq 'json_valid "$NEW_CONFIG"' "$PRECHECK" || {
     echo "ERROR: parser JSON validation guard is missing"
     exit 1
 }
+
+
+SYNC="$HERE/package/files/usr/bin/podkop-sub-sync"
+grep -Fq 'OLD_SB_PIDS="$(singbox_pids)"' "$SYNC" || {
+    echo "ERROR: updater must snapshot old sing-box PIDs before Podkop apply"
+    exit 1
+}
+grep -Fq 'New sing-box process detected: PID $TRACKED_PID' "$SYNC" || {
+    echo "ERROR: updater must wait for a fresh sing-box process"
+    exit 1
+}
+if grep -Fq 'sing-box check -c "$SINGCONF"' "$SYNC"; then
+    echo "ERROR: updater must not run a redundant post-start sing-box check"
+    exit 1
+fi
 echo "Checks passed for podkop-sub-sync $ROOT_VERSION"

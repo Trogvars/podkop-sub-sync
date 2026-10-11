@@ -47,6 +47,31 @@ singbox_running(){
     pidof sing-box >/dev/null 2>&1 || pidof sing-box-core >/dev/null 2>&1
 }
 
+singbox_pids(){
+    pidof sing-box 2>/dev/null || true
+    pidof sing-box-core 2>/dev/null || true
+}
+
+find_new_singbox_pid(){
+    for SB_PID in $(singbox_pids); do
+        SB_IS_OLD=0
+
+        for SB_OLD_PID in $OLD_SB_PIDS; do
+            if [ "$SB_PID" = "$SB_OLD_PID" ]; then
+                SB_IS_OLD=1
+                break
+            fi
+        done
+
+        if [ "$SB_IS_OLD" -eq 0 ]; then
+            printf '%s\n' "$SB_PID"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 LOCK_HELD=0
 TMP=""
 PODKOP_DEFERRED_STOP=0
@@ -449,6 +474,15 @@ done <"$LIST"
 uci commit podkop || rollback
 
 log "Written $ADDED proxy links to Podkop"
+
+# /etc/init.d/podkop is asynchronous under procd. Remember every sing-box PID
+# that belongs to the old configuration so it cannot be mistaken for a
+# successful start of the new configuration.
+OLD_SB_PIDS="$(singbox_pids)"
+if [ -n "$OLD_SB_PIDS" ]; then
+    log "Existing sing-box PID(s) before Podkop apply: $OLD_SB_PIDS"
+fi
+
 log "Starting Podkop with updated proxy list..."
 if [ "$PODKOP_DEFERRED_STOP" = 1 ]; then
     /etc/init.d/podkop start || rollback
@@ -457,79 +491,55 @@ else
     /etc/init.d/podkop restart || rollback
 fi
 
-SINGCONF="$(uci -q get podkop.settings.config_path 2>/dev/null || true)"
-[ -n "$SINGCONF" ] || SINGCONF="/etc/sing-box/config.json"
+# Podkop's sing_box_save_config() validates its temporary configuration before
+# /etc/init.d/sing-box start. Do not run another sing-box check here: with the
+# UPX-compressed SBE build a concurrent check can consume enough RAM to trigger
+# OOM on ~256 MiB routers.
+#
+# Instead, wait for a sing-box PID that did not exist before this apply, then
+# require that exact production process to remain alive for five seconds.
+log "Waiting for a new sing-box process from the updated Podkop configuration..."
 
-log "Waiting for Podkop/sing-box configuration to become ready..."
-
-CHECK_OK=0
 WAITED=0
-CHECK_OUT=""
+READY=0
+TRACKED_PID=""
+STABLE_WAIT=0
 
-while [ "$WAITED" -lt 60 ]; do
-    if [ ! -s "$SINGCONF" ]; then
-        sleep 1
-        WAITED=$((WAITED + 1))
-        continue
+while [ "$WAITED" -lt 90 ]; do
+    if [ -n "$TRACKED_PID" ] && kill -0 "$TRACKED_PID" 2>/dev/null; then
+        STABLE_WAIT=$((STABLE_WAIT + 1))
+
+        if [ "$STABLE_WAIT" -ge 5 ]; then
+            READY=1
+            break
+        fi
+    else
+        if [ -n "$TRACKED_PID" ]; then
+            log "WARN: sing-box PID $TRACKED_PID exited before stability check completed"
+        fi
+
+        TRACKED_PID="$(find_new_singbox_pid || true)"
+        STABLE_WAIT=0
+
+        if [ -n "$TRACKED_PID" ]; then
+            log "New sing-box process detected: PID $TRACKED_PID"
+        fi
     fi
 
-    CHECK_OUT="$(sing-box check -c "$SINGCONF" 2>&1)"
-    RC=$?
-
-    if [ "$RC" -eq 0 ]; then
-        CHECK_OK=1
-        break
+    if [ -z "$TRACKED_PID" ] && [ $((WAITED % 5)) -eq 0 ]; then
+        log "Waiting for new sing-box process... ${WAITED}s"
     fi
 
-    printf '%s\n' "$CHECK_OUT" |
-        grep -qE 'rule-set.*no such file or directory|/tmp/sing-box/rulesets/.*no such file or directory' ||
-        break
-
-    [ $((WAITED % 5)) -eq 0 ] && log "Waiting for Podkop rulesets... ${WAITED}s"
     sleep 1
     WAITED=$((WAITED + 1))
 done
 
-if [ "$CHECK_OK" != 1 ]; then
-    log "ERROR: sing-box validation failed"
-    printf '%s\n' "$CHECK_OUT"
-    [ -s "$SINGCONF" ] && cp "$SINGCONF" /tmp/podkop-sub-broken.json
+if [ "$READY" -ne 1 ]; then
+    log "ERROR: Podkop did not start a stable new sing-box process within 90s"
     rollback
 fi
 
-log "sing-box configuration validated after ${WAITED}s"
-
-PWAIT=0
-while ! singbox_running; do
-    PWAIT=$((PWAIT + 1))
-    if [ "$PWAIT" -ge 20 ]; then
-        log "ERROR: sing-box process did not appear after Podkop restart"
-        rollback
-    fi
-    sleep 1
-done
-
-log "sing-box process is running"
-
-# The configuration was already validated above before this point. Running a
-# second "sing-box check" here is especially expensive with the UPX-compressed
-# SBE build because it starts another decompressed sing-box-core alongside the
-# production process. On ~256 MiB routers that can trigger the OOM killer.
-#
-# Instead, give the production process a short stability window and verify that
-# it remains alive without spawning another sing-box instance.
-STABLE_WAIT=0
-while [ "$STABLE_WAIT" -lt 5 ]; do
-    sleep 1
-    STABLE_WAIT=$((STABLE_WAIT + 1))
-
-    if ! singbox_running; then
-        log "ERROR: sing-box process exited during post-start stability check"
-        rollback
-    fi
-done
-
-log "sing-box process remained stable for ${STABLE_WAIT}s"
+log "sing-box process remained stable for ${STABLE_WAIT}s (PID ${TRACKED_PID})"
 printf '%s\n' "$HASH" >"$STATE" || log "WARN: could not write state hash to $STATE"
 log "Update successful: $COUNT proxies"
 exit 0

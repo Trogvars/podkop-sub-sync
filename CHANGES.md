@@ -1,5 +1,23 @@
 # CHANGES
 
+## 2.3.3
+
+### Fixed
+
+- Fixed a race in the final apply path when `/etc/init.d/podkop start/restart`
+  returns before Podkop has finished rebuilding its sing-box configuration.
+- The updater no longer accepts a pre-existing sing-box process/configuration as
+  proof that the new Podkop configuration started successfully.
+- Existing sing-box PIDs are snapshotted before apply; success now requires a
+  new production sing-box PID and five seconds of stability.
+- Removed the updater-side readiness `sing-box check`. Podkop already validates
+  its temporary sing-box configuration before starting the service, and an
+  additional concurrent check is memory-expensive on ~256 MiB routers.
+- A transient new sing-box PID that exits before the five-second stability
+  window no longer causes an immediate false success.
+
+---
+
 ## 2.3.2
 
 ### Crash recovery

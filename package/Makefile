@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=podkop-sub-sync
-PKG_VERSION:=2.3.3
+PKG_VERSION:=2.4.0
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andy Shu
@@ -54,4 +54,29 @@ define Package/podkop-sub-sync/install
 	$(INSTALL_CONF) ./files/etc/config/podkop-sub-sync $(1)/etc/config/podkop-sub-sync
 endef
 
+define Package/luci-app-podkop-sub-sync
+  SECTION:=luci
+  CATEGORY:=LuCI
+  SUBMENU:=3. Applications
+  TITLE:=LuCI support for Podkop subscription sync
+  PKGARCH:=all
+  DEPENDS:=+luci-base +podkop-sub-sync
+endef
+
+define Package/luci-app-podkop-sub-sync/description
+Web interface for configuring Podkop subscription sync sections.
+endef
+
+define Package/luci-app-podkop-sub-sync/install
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/podkop-sub-sync
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/podkop-sub-sync/overview.js $(1)/www/luci-static/resources/view/podkop-sub-sync/overview.js
+
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/luci-app-podkop-sub-sync.json $(1)/usr/share/luci/menu.d/luci-app-podkop-sub-sync.json
+
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json $(1)/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json
+endef
+
 $(eval $(call BuildPackage,podkop-sub-sync))
+$(eval $(call BuildPackage,luci-app-podkop-sub-sync))

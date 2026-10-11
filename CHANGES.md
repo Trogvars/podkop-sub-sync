@@ -1,5 +1,15 @@
 # CHANGES
 
+## Service control (next release)
+
+- LuCI: Start / Stop background scheduler with visible status and scoped ACL.
+- Save & Apply respects a disabled service.
+- Fresh install enables and starts the service by default.
+- Reinstall/update preserves the previous autostart state and does not
+  reactivate a disabled service.
+
+---
+
 ## 2.5.0
 
 ### Reachability precheck profiles

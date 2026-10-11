@@ -2,7 +2,7 @@
 
 TAG="podkop-sub-precheck"
 CFG="podkop-sub-sync"
-SEC="main"
+SEC="${3:-main}"
 INPUT="${1:-}"
 OUTPUT="${2:-}"
 
@@ -12,6 +12,13 @@ die(){ precheck_log "ERROR: $*"; exit 1; }
 [ -n "$INPUT" ] || die "input file not specified"
 [ -n "$OUTPUT" ] || die "output file not specified"
 [ -s "$INPUT" ] || die "input list is empty"
+
+case "$SEC" in
+    ''|*[!A-Za-z0-9_]*) die "invalid sync section name: $SEC" ;;
+esac
+
+[ "$(uci -q get "${CFG}.${SEC}" 2>/dev/null || true)" = "sync" ] ||
+    die "sync section '$SEC' does not exist"
 [ -r /usr/lib/podkop/sing_box_config_facade.sh ] || die "Podkop sing-box facade not found"
 
 for c in jq sing-box curl sort head cut awk sed wc tr; do

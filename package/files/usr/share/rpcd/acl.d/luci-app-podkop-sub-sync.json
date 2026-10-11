@@ -1,0 +1,20 @@
+{
+  "luci-app-podkop-sub-sync": {
+    "description": "Grant access to Podkop Subscription Sync LuCI application",
+    "read": {
+      "uci": [
+        "podkop-sub-sync",
+        "podkop"
+      ]
+    },
+    "write": {
+      "uci": [
+        "podkop-sub-sync"
+      ],
+      "file": {
+        "/etc/init.d/podkop-sub-sync restart": [ "exec" ],
+        "/usr/bin/podkop-sub-sync *": [ "exec" ]
+      }
+    }
+  }
+}

@@ -1,7 +1,12 @@
+# One UCI file, like Podkop itself. Each named sync section automatically
+# manages the Podkop section with the same name:
+#   config sync 'main' -> config section 'main' in /etc/config/podkop
+#   config sync 'work' -> config section 'work' in /etc/config/podkop
+# Only Podkop sections with option connection_type 'proxy' are accepted.
+
 config sync 'main'
         option enabled '0'
         option url ''
-        option target 'main'
 
         option interval '86400'
         option retry_interval '900'

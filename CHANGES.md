@@ -1,5 +1,30 @@
 # CHANGES
 
+## 2.4.0
+
+### LuCI and Podkop section support
+
+- Added **Services → Podkop Subscription Sync** to LuCI.
+- Kept a single UCI file: `/etc/config/podkop-sub-sync`.
+- Sync section names now map directly to identically named `config section`
+  entries in `/etc/config/podkop`; the extra `target` mapping is no longer
+  used by runtime.
+- LuCI reads Podkop sections dynamically and only allows sections with
+  `connection_type=proxy` to be configured for subscriptions.
+- Each section can configure subscription URL, sync and retry intervals,
+  VLESS/XHTTP/Trojan/Shadowsocks switches, country include/exclude lists,
+  all precheck settings, HWID and User-Agent.
+- Added a per-section **Sync now** action.
+- `/usr/bin/podkop-sub-sync <section>` and precheck now use the selected named
+  section; calling the updater without an argument still defaults to `main`.
+- Replaced the main-only daemon with one scheduler that discovers all `config
+  sync` blocks in the same file, maintains independent timers, and runs jobs
+  sequentially.
+- State hashes are stored per sync section.
+- Added a separately buildable `luci-app-podkop-sub-sync` package; the direct
+  installer also deploys the LuCI files automatically when LuCI is present.
+
+---
 ## 2.3.3
 
 ### Fixed

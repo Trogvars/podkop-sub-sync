@@ -28,10 +28,14 @@ if ! grep -q '^CONFIG_PACKAGE_podkop-sub-sync=' .config 2>/dev/null; then
     echo 'CONFIG_PACKAGE_podkop-sub-sync=m' >> .config
 fi
 
+if ! grep -q '^CONFIG_PACKAGE_luci-app-podkop-sub-sync=' .config 2>/dev/null; then
+    echo 'CONFIG_PACKAGE_luci-app-podkop-sub-sync=m' >> .config
+fi
+
 make defconfig
 make package/podkop-sub-sync/clean V=s
 make package/podkop-sub-sync/compile V=s
 
 echo
 echo "Built package(s):"
-find bin -type f \( -name 'podkop-sub-sync_*.ipk' -o -name 'podkop-sub-sync-*.apk' \) -print
+find bin -type f \( -name 'podkop-sub-sync_*.ipk' -o -name 'podkop-sub-sync-*.apk' -o -name 'luci-app-podkop-sub-sync_*.ipk' -o -name 'luci-app-podkop-sub-sync-*.apk' \) -print

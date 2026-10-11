@@ -2,7 +2,7 @@
 
 TAG="podkop-sub-sync"
 CFG="podkop-sub-sync"
-SEC="main"
+SEC="${1:-main}"
 LOCK="/var/lock/podkop-sub-sync.lock"
 STATE_DIR="/etc/podkop-sub-sync-state"
 COMMON="/usr/lib/podkop-sub-sync/common.sh"
@@ -124,12 +124,25 @@ acquire_lock(){
     return 0
 }
 
+case "$SEC" in
+    ''|*[!A-Za-z0-9_]*)
+        log "ERROR: invalid sync section name: $SEC"
+        exit 2
+        ;;
+esac
+
+SECTION_TYPE="$(uci -q get "${CFG}.${SEC}" 2>/dev/null || true)"
+[ "$SECTION_TYPE" = "sync" ] || {
+    log "ERROR: sync section '$SEC' does not exist"
+    exit 2
+}
+
 ENABLED="$(cfg_get enabled 0)"
 [ "$ENABLED" = 1 ] || { log "Sync disabled"; exit 0; }
 
 acquire_lock
 LOCK_RC=$?
-[ "$LOCK_RC" -eq 2 ] && exit 0
+[ "$LOCK_RC" -eq 2 ] && exit 75
 [ "$LOCK_RC" -eq 0 ] || exit 1
 
 TMP="$(mktemp -d /tmp/podkop-sub.XXXXXX)" || {
@@ -139,7 +152,7 @@ TMP="$(mktemp -d /tmp/podkop-sub.XXXXXX)" || {
 trap cleanup EXIT INT TERM
 
 URL="$(cfg_get url '')"
-TARGET="$(cfg_get target main)"
+TARGET="$SEC"
 SEND_HWID="$(cfg_get send_hwid 0)"
 HWID="$(cfg_get hwid '')"
 ENABLE_XHTTP="$(cfg_get enable_xhttp '')"
@@ -162,6 +175,14 @@ uci -q get "podkop.${TARGET}" >/dev/null 2>&1 || {
     log "ERROR: podkop section '$TARGET' missing"
     exit 2
 }
+
+TARGET_CONNECTION_TYPE="$(uci -q get "podkop.${TARGET}.connection_type" 2>/dev/null || true)"
+[ "$TARGET_CONNECTION_TYPE" = "proxy" ] || {
+    log "ERROR: podkop section '$TARGET' is not a proxy section (connection_type=${TARGET_CONNECTION_TYPE:-unset})"
+    exit 2
+}
+
+log "Sync profile: $SEC -> podkop.$TARGET"
 
 append_protocol(){
     if [ -n "$ENABLED_PROTOCOLS" ]; then
@@ -371,7 +392,7 @@ if [ "$PRECHECK_ENABLED" = 1 ]; then
 
     PSS_PRECHECK_DEFER_RESTORE=1 \
     PSS_PRECHECK_STOPPED_MARKER="$PRECHECK_STOPPED_MARKER" \
-        /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
+        /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED" "$SEC"
     RC=$?
 
     if [ "$RC" -eq 139 ]; then
@@ -385,7 +406,7 @@ if [ "$PRECHECK_ENABLED" = 1 ]; then
         PSS_PRECHECK_STOPPED_MARKER="$PRECHECK_STOPPED_MARKER" \
         PSS_PRECHECK_FORCE_STOP=1 \
         PSS_PRECHECK_BATCH_SIZE=1 \
-            /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED"
+            /usr/bin/podkop-sub-precheck "$LIST" "$PRECHECKED" "$SEC"
         RC=$?
     fi
 
@@ -421,7 +442,7 @@ log "  SS    : $(count_protocol ss "$LIST")"
 log "  Total : $COUNT"
 
 mkdir -p "$STATE_DIR"
-STATE="${STATE_DIR}/${TARGET}.sha256"
+STATE="${STATE_DIR}/${SEC}.sha256"
 OLD_STATE="/etc/podkop-sub-sync-${TARGET}.sha256"
 
 if [ ! -r "$STATE" ] && [ -r "$OLD_STATE" ]; then

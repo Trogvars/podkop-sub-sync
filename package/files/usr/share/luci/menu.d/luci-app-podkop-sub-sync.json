@@ -1,0 +1,13 @@
+{
+  "admin/services/podkop-sub-sync": {
+    "title": "Podkop Subscription Sync",
+    "order": 80,
+    "action": {
+      "type": "view",
+      "path": "podkop-sub-sync/overview"
+    },
+    "depends": {
+      "acl": [ "luci-app-podkop-sub-sync" ]
+    }
+  }
+}

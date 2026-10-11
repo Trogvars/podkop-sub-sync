@@ -12,8 +12,30 @@
         "podkop-sub-sync"
       ],
       "file": {
-        "/etc/init.d/podkop-sub-sync restart": [ "exec" ],
-        "/usr/bin/podkop-sub-sync *": [ "exec" ]
+        "/etc/init.d/podkop-sub-sync restart": [
+          "exec"
+        ],
+        "/usr/bin/podkop-sub-sync *": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync start": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync stop": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync enable": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync disable": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync enabled": [
+          "exec"
+        ],
+        "/etc/init.d/podkop-sub-sync status": [
+          "exec"
+        ]
       }
     }
   }

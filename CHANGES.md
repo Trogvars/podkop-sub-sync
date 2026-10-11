@@ -1,14 +1,14 @@
 # CHANGES
 
-## Service control (next release)
+## 2.5.1
 
-- LuCI: Start / Stop background scheduler with visible status and scoped ACL.
-- Save & Apply respects a disabled service.
-- Fresh install enables and starts the service by default.
-- Reinstall/update preserves the previous autostart state and does not
-  reactivate a disabled service.
+### Background service control and version display
 
----
+- Added LuCI Start/Stop buttons for the background subscription scheduler.
+- Save & Apply respects a disabled service; updates preserve the previous autostart state.
+- The displayed LuCI version is read from `/usr/share/podkop-sub-sync/VERSION`,
+  keeping the UI consistent with the runtime package.
+- Aligned root `VERSION` and package `PKG_VERSION` with release 2.5.1.
 
 ## 2.5.0
 

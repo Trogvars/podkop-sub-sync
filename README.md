@@ -199,6 +199,9 @@ cat /usr/share/podkop-sub-sync/VERSION
 grep -n 'Podkop Subscription Sync v%s' /www/luci-static/resources/view/podkop-sub-sync/overview.js
 ```
 
+Background daemon controls live outside the re-rendered form, so they remain
+visible even after Save & Apply.
+
 After an update, use Ctrl+Shift+R in LuCI to avoid an older cached script.
 
 ## Configuration

@@ -8,7 +8,9 @@
   (`Podkop Subscription Sync vX.Y.Z`) instead of relying on the service panel.
 - Keep the version read from `/usr/share/podkop-sub-sync/VERSION`, avoiding a
   hard-coded LuCI version number.
-- Add regression coverage for version visibility in the LuCI map header.
+- Keep background service Start/Stop controls outside the form map so LuCI
+  Save & Apply re-renders do not remove them.
+- Add regression coverage for version visibility and persistent controls.
 - The direct installer continues to preserve existing service state.
 
 ---

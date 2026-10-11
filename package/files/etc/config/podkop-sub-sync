@@ -24,6 +24,11 @@ config sync 'main'
         # list exclude_country 'RU'
 
         option precheck_enabled '1'
+        option precheck_target 'gstatic'
+        option precheck_youtube_second_stage '0'
+
+        # Legacy/custom compatibility. Built-in gstatic/cloudflare targets
+        # always expect HTTP 204; these options are only used by old/custom configs.
         option precheck_url 'https://www.gstatic.com/generate_204'
         option precheck_http_code '204'
         option precheck_connect_timeout '3'

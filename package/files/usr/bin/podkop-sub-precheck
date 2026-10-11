@@ -66,7 +66,8 @@ is_uint(){
     esac
 }
 
-TEST_URL="$(cfg_get precheck_url 'https://www.gstatic.com/generate_204')"
+TEST_TARGET="$(cfg_get precheck_target '')"
+LEGACY_TEST_URL="$(cfg_get precheck_url '')"
 EXPECTED_CODE="$(cfg_get precheck_http_code 204)"
 TIMEOUT="$(cfg_get precheck_timeout 7)"
 CONNECT_TIMEOUT="$(cfg_get precheck_connect_timeout 3)"
@@ -76,6 +77,41 @@ MIN_NODES="$(cfg_get precheck_min_nodes 3)"
 MIN_PERCENT="$(cfg_get precheck_min_percent 20)"
 MAX_NODES="$(cfg_get precheck_max_nodes 0)"
 INSECURE_TLS="$(cfg_get precheck_insecure_tls 1)"
+YOUTUBE_SECOND_STAGE="$(cfg_get precheck_youtube_second_stage 0)"
+
+GSTATIC_URL='https://www.gstatic.com/generate_204'
+YOUTUBE_URL='https://www.youtube.com/generate_204'
+
+# Backward compatibility: infer the dropdown value from an existing precheck_url
+# if precheck_target has not been written yet.
+if [ -z "$TEST_TARGET" ]; then
+    case "$LEGACY_TEST_URL" in
+        ''|https://www.gstatic.com/generate_204)
+            TEST_TARGET='gstatic'
+            ;;
+        https://www.youtube.com/generate_204)
+            TEST_TARGET='youtube'
+            ;;
+        *)
+            TEST_TARGET='custom'
+            ;;
+    esac
+fi
+
+case "$TEST_TARGET" in
+    gstatic)
+        TEST_URL="$GSTATIC_URL"
+        ;;
+    youtube)
+        TEST_URL="$YOUTUBE_URL"
+        ;;
+    custom)
+        TEST_URL="${LEGACY_TEST_URL:-$GSTATIC_URL}"
+        ;;
+    *)
+        die "precheck_target must be gstatic, youtube or custom"
+        ;;
+esac
 DNS_SERVER="$(uci -q get "${CFG}.${SEC}.precheck_dns_server" 2>/dev/null ||
               uci -q get podkop.settings.bootstrap_dns_server 2>/dev/null ||
               printf '%s\n' '1.1.1.1')"
@@ -101,6 +137,11 @@ case "$INSECURE_TLS" in
     *) die "precheck_insecure_tls must be 0 or 1" ;;
 esac
 
+case "$YOUTUBE_SECOND_STAGE" in
+    0|1) ;;
+    *) die "precheck_youtube_second_stage must be 0 or 1" ;;
+esac
+
 case "$EXPECTED_CODE" in
     any) ;;
     [1-5][0-9][0-9]) ;;
@@ -120,6 +161,10 @@ http_code_ok(){
         return 1
     fi
     [ "$CODE" = "$EXPECTED_CODE" ]
+}
+
+youtube_code_ok(){
+    [ "$1" = "204" ]
 }
 
 node_name(){
@@ -281,7 +326,16 @@ cleanup(){
 }
 trap cleanup EXIT INT TERM
 
-precheck_log "Checking test URL: $TEST_URL"
+precheck_log "Primary check: $TEST_TARGET -> $TEST_URL"
+if [ "$YOUTUBE_SECOND_STAGE" = 1 ]; then
+    if [ "$TEST_TARGET" = "youtube" ]; then
+        precheck_log "Second-stage YouTube check: enabled, but primary target is already YouTube; duplicate request will be skipped"
+    else
+        precheck_log "Second-stage YouTube check: enabled -> $YOUTUBE_URL"
+    fi
+else
+    precheck_log "Second-stage YouTube check: disabled"
+fi
 
 CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
     --connect-timeout "$CONNECT_TIMEOUT" \
@@ -289,13 +343,21 @@ CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
     -o /dev/null \
     -w '%{http_code}' \
     "$TEST_URL" 2>/dev/null)"
+CONTROL_RC=$?
 
-if ! http_code_ok "$CONTROL_CODE"; then
-    precheck_log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000})"
-    exit 10
+if [ "$TEST_TARGET" = "youtube" ]; then
+    if [ "$CONTROL_RC" -eq 0 ] && http_code_ok "$CONTROL_CODE"; then
+        precheck_log "Direct YouTube control check is available (HTTP $CONTROL_CODE)"
+    else
+        precheck_log "Direct YouTube control check unavailable (HTTP ${CONTROL_CODE:-000}); continuing because proxy reachability is the purpose of this test"
+    fi
+else
+    if [ "$CONTROL_RC" -ne 0 ] || ! http_code_ok "$CONTROL_CODE"; then
+        precheck_log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000}, rc=$CONTROL_RC)"
+        exit 10
+    fi
+    precheck_log "Control URL is available (HTTP $CONTROL_CODE)"
 fi
-
-precheck_log "Control URL is available (HTTP $CONTROL_CODE)"
 
 SBE_VERSION_INFO="$(sing-box version 2>/dev/null || true)"
 MEM_TOTAL_KB="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
@@ -345,12 +407,19 @@ if { [ "$LOW_MEMORY_SBE" = 1 ] || [ "$FORCE_ISOLATED" = 1 ]; } &&
         -w '%{http_code}' \
         "$TEST_URL" 2>/dev/null)"
 
-    if ! http_code_ok "$DIRECT_CODE"; then
-        precheck_log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
-        exit 13
+    if [ "$TEST_TARGET" = "youtube" ]; then
+        if http_code_ok "$DIRECT_CODE"; then
+            precheck_log "Direct YouTube connectivity after stopping Podkop is available (HTTP $DIRECT_CODE)"
+        else
+            precheck_log "Direct YouTube connectivity after stopping Podkop is unavailable (HTTP ${DIRECT_CODE:-000}); continuing with proxy tests"
+        fi
+    else
+        if ! http_code_ok "$DIRECT_CODE"; then
+            precheck_log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
+            exit 13
+        fi
+        precheck_log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
     fi
-
-    precheck_log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
 fi
 
 TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
@@ -360,6 +429,7 @@ TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
 GOOD=0
 BAD=0
 PARSER_BAD=0
+YOUTUBE_BAD=0
 GLOBAL_INDEX=0
 START=1
 
@@ -368,6 +438,8 @@ precheck_log "Candidates : $TOTAL"
 precheck_log "Batch size : $BATCH_SIZE"
 precheck_log "Timeout    : ${TIMEOUT}s"
 precheck_log "Expected   : HTTP $EXPECTED_CODE"
+precheck_log "Primary     : $TEST_TARGET"
+[ "$YOUTUBE_SECOND_STAGE" = 1 ] && precheck_log "YouTube 2nd : enabled" || precheck_log "YouTube 2nd : disabled"
 [ "$MAX_NODES" -gt 0 ] && precheck_log "Keep fastest: $MAX_NODES" || precheck_log "Keep fastest: unlimited"
 [ "$INSECURE_TLS" = 1 ] && precheck_log "TLS verify  : disabled" || precheck_log "TLS verify  : enabled"
 precheck_log ""
@@ -500,9 +572,40 @@ while [ "$START" -le "$TOTAL" ]; do
 
         if [ "$CURL_RC" -eq 0 ] && http_code_ok "$CODE"; then
             MS="$(awk -v t="${TIME:-0}" 'BEGIN{printf "%.0f",t*1000}')"
+            YOUTUBE_MS=""
+
+            if [ "$YOUTUBE_SECOND_STAGE" = 1 ] && [ "$TEST_TARGET" != "youtube" ]; then
+                YOUTUBE_RESULT="$(curl $CURL_TLS_OPT -sS \
+                    -x "http://127.0.0.1:${PORT}" \
+                    --connect-timeout "$CONNECT_TIMEOUT" \
+                    --max-time "$TIMEOUT" \
+                    -o /dev/null \
+                    -w '%{http_code} %{time_total}' \
+                    "$YOUTUBE_URL" 2>/dev/null)"
+                YOUTUBE_RC=$?
+
+                YOUTUBE_CODE="$(printf '%s\n' "$YOUTUBE_RESULT" | awk '{print $1}')"
+                YOUTUBE_TIME="$(printf '%s\n' "$YOUTUBE_RESULT" | awk '{print $2}')"
+                [ -n "$YOUTUBE_CODE" ] || YOUTUBE_CODE="000"
+
+                if [ "$YOUTUBE_RC" -ne 0 ] || ! youtube_code_ok "$YOUTUBE_CODE"; then
+                    BAD=$((BAD + 1))
+                    YOUTUBE_BAD=$((YOUTUBE_BAD + 1))
+                    precheck_log "[$INDEX/$TOTAL] FAIL YT HTTP=${YOUTUBE_CODE} rc=${YOUTUBE_RC}  $NAME"
+                    continue
+                fi
+
+                YOUTUBE_MS="$(awk -v t="${YOUTUBE_TIME:-0}" 'BEGIN{printf "%.0f",t*1000}')"
+            fi
+
             printf '%s\t%s\n' "$MS" "$LINK" >>"$RANKED"
             GOOD=$((GOOD + 1))
-            precheck_log "[$INDEX/$TOTAL] OK   ${MS}ms  $NAME"
+
+            if [ -n "$YOUTUBE_MS" ]; then
+                precheck_log "[$INDEX/$TOTAL] OK   ${MS}ms YT=${YOUTUBE_MS}ms  $NAME"
+            else
+                precheck_log "[$INDEX/$TOTAL] OK   ${MS}ms  $NAME"
+            fi
         else
             BAD=$((BAD + 1))
             precheck_log "[$INDEX/$TOTAL] FAIL HTTP=${CODE} rc=${CURL_RC}  $NAME"
@@ -557,6 +660,7 @@ precheck_log "Total       : $TOTAL"
 precheck_log "Working     : $GOOD"
 precheck_log "Failed      : $BAD"
 precheck_log "Parser fail : $PARSER_BAD"
+[ "$YOUTUBE_SECOND_STAGE" = 1 ] && precheck_log "YouTube fail: $YOUTUBE_BAD"
 precheck_log "Success     : ${PERCENT}%"
 precheck_log "Selected    : $ACTUAL_SELECTED"
 [ -n "$FASTEST_MS" ] && precheck_log "Fastest     : ${FASTEST_MS}ms"

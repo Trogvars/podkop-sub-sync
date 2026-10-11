@@ -1,5 +1,16 @@
 # CHANGES
 
+## 2.4.2
+
+### LuCI overview
+
+- Fixed the main `Podkop sections` table still exposing protocol, country,
+  precheck and advanced options as horizontal columns.
+- All tab options are now modal-only by default.
+- The overview keeps only `Name`, `Enabled`, `Sync interval` and the
+  Edit/Delete actions; all detailed settings remain in the vertical Edit dialog.
+
+---
 ## 2.4.1
 
 ### LuCI layout

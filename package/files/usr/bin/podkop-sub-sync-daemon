@@ -1,31 +1,87 @@
 #!/bin/ash
 
+CFG="podkop-sub-sync"
+SCHEDULE_DIR="/tmp/podkop-sub-sync-schedule"
+BUSY_RETRY=60
+
+mkdir -p "$SCHEDULE_DIR"
+
+list_sync_sections(){
+    uci -q show "$CFG" 2>/dev/null |
+        sed -n "s/^${CFG}\.\([A-Za-z0-9_][A-Za-z0-9_]*\)=sync$/\1/p"
+}
+
+cfg_get(){
+    ds_sec="$1"
+    ds_key="$2"
+    ds_default="$3"
+    ds_value="$(uci -q get "${CFG}.${ds_sec}.${ds_key}" 2>/dev/null || true)"
+    [ -n "$ds_value" ] && printf '%s\n' "$ds_value" || printf '%s\n' "$ds_default"
+}
+
+normalize_interval(){
+    ni_value="$1"
+    ni_default="$2"
+
+    case "$ni_value" in
+        ''|*[!0-9]*) ni_value="$ni_default" ;;
+    esac
+
+    [ "$ni_value" -lt 60 ] && ni_value=60
+    printf '%s\n' "$ni_value"
+}
+
 while :; do
-    printf '[%s] Starting subscription sync\n' "$(date '+%F %T')"
+    NOW="$(date +%s)"
 
-    /usr/bin/podkop-sub-sync
-    RC=$?
+    for SEC in $(list_sync_sections); do
+        ENABLED="$(cfg_get "$SEC" enabled 0)"
+        URL="$(cfg_get "$SEC" url '')"
+        NEXT_FILE="$SCHEDULE_DIR/${SEC}.next"
 
-    INTERVAL="$(uci -q get podkop-sub-sync.main.interval 2>/dev/null || true)"
-    RETRY_INTERVAL="$(uci -q get podkop-sub-sync.main.retry_interval 2>/dev/null || true)"
+        if [ "$ENABLED" != 1 ] || [ -z "$URL" ]; then
+            rm -f "$NEXT_FILE"
+            continue
+        fi
 
-    case "$INTERVAL" in
-        ''|*[!0-9]*) INTERVAL=86400 ;;
-    esac
-    case "$RETRY_INTERVAL" in
-        ''|*[!0-9]*) RETRY_INTERVAL=900 ;;
-    esac
+        NEXT=0
+        if [ -r "$NEXT_FILE" ]; then
+            NEXT="$(cat "$NEXT_FILE" 2>/dev/null || printf '0')"
+            case "$NEXT" in
+                ''|*[!0-9]*) NEXT=0 ;;
+            esac
+        fi
 
-    [ "$INTERVAL" -lt 60 ] && INTERVAL=60
-    [ "$RETRY_INTERVAL" -lt 60 ] && RETRY_INTERVAL=60
+        [ "$NOW" -ge "$NEXT" ] || continue
 
-    if [ "$RC" -eq 0 ]; then
-        printf '[%s] Subscription sync completed successfully\n' "$(date '+%F %T')"
-        printf '[%s] Next sync in %ss\n' "$(date '+%F %T')" "$INTERVAL"
-        sleep "$INTERVAL"
-    else
-        printf '[%s] Subscription sync failed with code %s\n' "$(date '+%F %T')" "$RC"
-        printf '[%s] Retry in %ss\n' "$(date '+%F %T')" "$RETRY_INTERVAL"
-        sleep "$RETRY_INTERVAL"
-    fi
+        printf '[%s] [%s] Starting subscription sync\n' "$(date '+%F %T')" "$SEC"
+
+        /usr/bin/podkop-sub-sync "$SEC"
+        RC=$?
+
+        INTERVAL="$(normalize_interval "$(cfg_get "$SEC" interval 86400)" 86400)"
+        RETRY_INTERVAL="$(normalize_interval "$(cfg_get "$SEC" retry_interval 900)" 900)"
+        FINISHED="$(date +%s)"
+
+        if [ "$RC" -eq 0 ]; then
+            NEXT=$((FINISHED + INTERVAL))
+            printf '[%s] [%s] Subscription sync completed successfully\n' "$(date '+%F %T')" "$SEC"
+            printf '[%s] [%s] Next sync in %ss\n' "$(date '+%F %T')" "$SEC" "$INTERVAL"
+        elif [ "$RC" -eq 75 ]; then
+            NEXT=$((FINISHED + BUSY_RETRY))
+            printf '[%s] [%s] Updater busy; retry in %ss\n' "$(date '+%F %T')" "$SEC" "$BUSY_RETRY"
+        else
+            NEXT=$((FINISHED + RETRY_INTERVAL))
+            printf '[%s] [%s] Subscription sync failed with code %s\n' "$(date '+%F %T')" "$SEC" "$RC"
+            printf '[%s] [%s] Retry in %ss\n' "$(date '+%F %T')" "$SEC" "$RETRY_INTERVAL"
+        fi
+
+        printf '%s\n' "$NEXT" >"$NEXT_FILE"
+
+        # Re-read the clock after a potentially long precheck before checking
+        # whether following profiles are also due.
+        NOW="$(date +%s)"
+    done
+
+    sleep 30
 done

@@ -5,7 +5,12 @@
       "uci": [
         "podkop-sub-sync",
         "podkop"
-      ]
+      ],
+      "file": {
+        "/usr/share/podkop-sub-sync/VERSION": [
+          "read"
+        ]
+      }
     },
     "write": {
       "uci": [

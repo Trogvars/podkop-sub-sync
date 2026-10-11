@@ -70,7 +70,7 @@ return view.extend({
 			}
 		});
 
-		m = new form.Map('podkop-sub-sync', _('Podkop Subscription Sync v%s').format(installedVersion || _('unknown')),
+		m = new form.Map('podkop-sub-sync', _('Podkop Subscription Sync'),
 			_('One configuration file is used for all subscriptions. Each Podkop section is shown as a vertical block with all settings visible. The sync section name must match the Podkop section name. Eligible Podkop proxy sections: %s').format(eligible.length ? eligible.join(', ') : _('none')));
 
 		s = m.section(form.TypedSection, 'sync', _('Podkop sections'));
@@ -266,6 +266,7 @@ return view.extend({
 			var stop = E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-negative' }, _('Stop service'));
 			var controls = E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Background synchronization service')),
+				E('p', {}, _('Installed version: %s').format(installedVersion || _('unknown'))),
 				E('p', {}, _('Enabled controls each subscription; these buttons control the background daemon. Stopping does not affect Podkop or sing-box.')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [ start, stop, status ])
 			]);

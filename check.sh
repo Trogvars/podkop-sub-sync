@@ -166,6 +166,18 @@ grep -Fq "A sync section named" "$LUCI_VIEW" || {
     echo "ERROR: LuCI must reject duplicate sync section names"
     exit 1
 }
+grep -Fq "form.TypedSection" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI must render profiles as vertical TypedSection blocks"
+    exit 1
+}
+if grep -Fq "form.GridSection" "$LUCI_VIEW"; then
+    echo "ERROR: LuCI must not render profile settings as a horizontal GridSection table"
+    exit 1
+fi
+if grep -Fq ".modalonly" "$LUCI_VIEW"; then
+    echo "ERROR: LuCI profile settings must be visible directly on the page"
+    exit 1
+fi
 
 if command -v node >/dev/null 2>&1; then
     node --check "$LUCI_VIEW"

@@ -141,6 +141,43 @@ sing-box check
 success
 ```
 
+## LuCI web interface
+
+When LuCI is installed, the project adds:
+
+```text
+Services -> Podkop Subscription Sync
+```
+
+There is still only **one** configuration file:
+
+```text
+/etc/config/podkop-sub-sync
+```
+
+It mirrors Podkop's named sections. For example:
+
+```text
+/etc/config/podkop:
+config section 'main'
+config section 'work'
+
+/etc/config/podkop-sub-sync:
+config sync 'main'
+config sync 'work'
+```
+
+`sync 'main'` always manages `podkop.main`, and `sync 'work'` always manages
+`podkop.work`. There is no separate target/profile mapping.
+
+LuCI discovers the real `config section` blocks from `/etc/config/podkop` and
+only permits sections whose `connection_type` is `proxy`. VPN or exclusion
+sections cannot accidentally be overwritten by subscription sync.
+
+For each section the UI exposes the subscription URL, sync/retry intervals,
+VLESS/XHTTP/Trojan/Shadowsocks switches, include/exclude country lists,
+precheck parameters, HWID and User-Agent. A **Sync now** button runs the
+selected section immediately.
 ## Configuration
 
 `/etc/config/podkop-sub-sync`:
@@ -149,7 +186,6 @@ success
 config sync 'main'
         option enabled '1'
         option url 'https://example.com/sub/xxxxx'
-        option target 'main'
 
         option interval '86400'
         option retry_interval '900'
@@ -177,8 +213,21 @@ config sync 'main'
         option precheck_min_percent '20'
         option precheck_max_nodes '20'
         option precheck_insecure_tls '0'
+
+config sync 'work'
+        option enabled '1'
+        option url 'https://example.com/sub/work'
+        option interval '21600'
+        option retry_interval '900'
+        option enable_vless '1'
+        option enable_trojan '1'
+        option enable_ss '1'
+        option enable_xhttp '1'
+        list exclude_country 'RU'
 ```
 
+Each block maps to the Podkop section with the same name. There is no `target`
+option in the 2.4.0 model.
 ### Country filters
 
 `include_country` is a whitelist. If at least one include is configured, only
@@ -327,7 +376,8 @@ explicitly to change it.
 Manual sync:
 
 ```sh
-/usr/bin/podkop-sub-sync
+/usr/bin/podkop-sub-sync          # main
+/usr/bin/podkop-sub-sync work     # named Podkop section
 ```
 
 Logs:
@@ -381,7 +431,10 @@ The resulting package is found under the SDK `bin/` tree.
         ├── usr/bin/podkop-sub-sync
         ├── usr/bin/podkop-sub-precheck
         ├── usr/bin/podkop-sub-sync-daemon
-        └── usr/lib/podkop-sub-sync/common.sh
+        ├── usr/lib/podkop-sub-sync/common.sh
+        ├── www/luci-static/resources/view/podkop-sub-sync/overview.js
+        ├── usr/share/luci/menu.d/luci-app-podkop-sub-sync.json
+        └── usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json
 ```
 
 ## Migration from the legacy repositories

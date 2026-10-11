@@ -152,7 +152,7 @@ TMP="$(mktemp -d /tmp/podkop-sub.XXXXXX)" || {
 trap cleanup EXIT INT TERM
 
 URL="$(cfg_get url '')"
-TARGET="$(cfg_get target "$SEC")"
+TARGET="$SEC"
 SEND_HWID="$(cfg_get send_hwid 0)"
 HWID="$(cfg_get hwid '')"
 ENABLE_XHTTP="$(cfg_get enable_xhttp '')"
@@ -181,20 +181,6 @@ TARGET_CONNECTION_TYPE="$(uci -q get "podkop.${TARGET}.connection_type" 2>/dev/n
     log "ERROR: podkop section '$TARGET' is not a proxy section (connection_type=${TARGET_CONNECTION_TYPE:-unset})"
     exit 2
 }
-
-# Do not allow two enabled subscription profiles to fight over the same
-# Podkop section. They would continuously overwrite each other's URLTest list.
-for OTHER_SEC in $(uci -q show "$CFG" 2>/dev/null |
-    sed -n "s/^${CFG}\.\([A-Za-z0-9_][A-Za-z0-9_]*\)=sync$/\1/p")
-do
-    [ "$OTHER_SEC" = "$SEC" ] && continue
-    [ "$(uci -q get "${CFG}.${OTHER_SEC}.enabled" 2>/dev/null || true)" = 1 ] || continue
-    [ -n "$(uci -q get "${CFG}.${OTHER_SEC}.url" 2>/dev/null || true)" ] || continue
-    [ "$(uci -q get "${CFG}.${OTHER_SEC}.target" 2>/dev/null || true)" = "$TARGET" ] || continue
-
-    log "ERROR: target '$TARGET' is already used by enabled sync section '$OTHER_SEC'"
-    exit 2
-done
 
 log "Sync profile: $SEC -> podkop.$TARGET"
 

@@ -178,6 +178,15 @@ For each section the UI exposes the subscription URL, sync/retry intervals,
 VLESS/XHTTP/Trojan/Shadowsocks switches, include/exclude country lists,
 precheck parameters, HWID and User-Agent. A **Sync now** button runs the
 selected section immediately.
+
+A global **Background synchronization service** panel provides **Start service** and
+**Stop service** buttons. They control the procd daemon and its boot autostart,
+not Podkop or sing-box. Subscription-level **Enabled** switches are separate.
+
+On first install the daemon starts and is enabled at boot. Subsequent updates
+preserve its previous enabled/disabled state. Save & Apply does not restart a
+disabled daemon. `--no-start` still suppresses immediate startup on first install.
+
 ## Configuration
 
 `/etc/config/podkop-sub-sync`:

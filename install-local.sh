@@ -463,8 +463,19 @@ do
     backup_if_exists "$f"
 done
 
+# Preserve the service's previous autostart state across upgrades.
+# On first installation the service is enabled and started by default.
+SERVICE_WAS_INSTALLED=0
+SERVICE_AUTOSTART_WAS_ENABLED=1
+if [ -x /etc/init.d/podkop-sub-sync ]; then
+    SERVICE_WAS_INSTALLED=1
+    if ! /etc/init.d/podkop-sub-sync enabled >/dev/null 2>&1; then
+        SERVICE_AUTOSTART_WAS_ENABLED=0
+    fi
+fi
+
 restart_old_service(){
-    if [ -x /etc/init.d/podkop-sub-sync ]; then
+    if [ "$SERVICE_AUTOSTART_WAS_ENABLED" = 1 ] && [ -x /etc/init.d/podkop-sub-sync ]; then
         /etc/init.d/podkop-sub-sync start >/dev/null 2>&1 || true
     fi
 }
@@ -695,12 +706,16 @@ do
     }
 done
 
-/etc/init.d/podkop-sub-sync enable
-
-if [ "$NO_START" = 1 ]; then
-    echo "Installed and enabled; not started (--no-start)."
+if [ "$SERVICE_WAS_INSTALLED" = 1 ] && [ "$SERVICE_AUTOSTART_WAS_ENABLED" = 0 ]; then
+    /etc/init.d/podkop-sub-sync disable
+    echo "Service was disabled before update; keeping it stopped with autostart disabled."
 else
-    /etc/init.d/podkop-sub-sync start
+    /etc/init.d/podkop-sub-sync enable
+    if [ "$NO_START" = 1 ]; then
+        echo "Installed and enabled; not started (--no-start)."
+    else
+        /etc/init.d/podkop-sub-sync start
+    fi
 fi
 
 if [ "$LUCI_INSTALLED" = 1 ]; then

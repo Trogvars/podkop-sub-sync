@@ -214,10 +214,18 @@ grep -Fq "fs.read('/usr/share/podkop-sub-sync/VERSION')" "$LUCI_VIEW" || {
     echo "ERROR: LuCI must read the installed VERSION file"
     exit 1
 }
-grep -Fq 'Installed version: %s' "$LUCI_VIEW" || {
-    echo "ERROR: LuCI installed version label is missing"
+grep -Fq "Podkop Subscription Sync v%s" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI map title must contain the installed version"
     exit 1
 }
+grep -Fq "return E('div', {}, [ controls, node ]);" "$LUCI_VIEW" || {
+    echo "ERROR: global service controls must be outside the re-rendered form map"
+    exit 1
+}
+if grep -Fq "node.insertBefore(controls, node.firstChild)" "$LUCI_VIEW"; then
+    echo "ERROR: global service controls are inside the form and disappear on re-render"
+    exit 1
+fi
 python3 - "$HERE/package/files/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json" <<'PY'
 import json
 import sys

@@ -632,6 +632,11 @@ do
                 ;;
         esac
         uci set "podkop-sub-sync.${sync_sec}.precheck_target=${current_precheck_target}"
+    elif [ "$current_precheck_target" = "youtube" ]; then
+        echo "Migrating obsolete primary YouTube target for profile $sync_sec to gstatic + YouTube second stage"
+        current_precheck_target='gstatic'
+        uci set "podkop-sub-sync.${sync_sec}.precheck_target=gstatic"
+        uci set "podkop-sub-sync.${sync_sec}.precheck_youtube_second_stage=1"
     fi
 
     uci -q get "podkop-sub-sync.${sync_sec}.precheck_youtube_second_stage" >/dev/null 2>&1 ||

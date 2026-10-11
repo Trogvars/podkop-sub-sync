@@ -50,12 +50,14 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			uci.load('podkop-sub-sync'),
-			uci.load('podkop')
+			uci.load('podkop'),
+			fs.read('/usr/share/podkop-sub-sync/VERSION').catch(function() { return ''; })
 		]);
 	},
 
-	render: function() {
+	render: function(data) {
 		var m, s, o;
+		var installedVersion = (data[2] || '').trim();
 		var podkopSections = uci.sections('podkop', 'section');
 		var proxyTargets = {};
 		var eligible = [];
@@ -264,6 +266,7 @@ return view.extend({
 			var stop = E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-negative' }, _('Stop service'));
 			var controls = E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Background synchronization service')),
+				E('p', {}, _('Installed version: %s').format(installedVersion || _('unknown'))),
 				E('p', {}, _('Enabled controls each subscription; these buttons control the background daemon. Stopping does not affect Podkop or sing-box.')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [ start, stop, status ])
 			]);

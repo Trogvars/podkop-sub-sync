@@ -209,6 +209,23 @@ grep -Fq "'precheck_youtube_second_stage'" "$LUCI_VIEW" || {
     exit 1
 }
 
+# The LuCI version label must reflect the installed runtime package.
+grep -Fq "fs.read('/usr/share/podkop-sub-sync/VERSION')" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI must read the installed VERSION file"
+    exit 1
+}
+grep -Fq 'Installed version: %s' "$LUCI_VIEW" || {
+    echo "ERROR: LuCI installed version label is missing"
+    exit 1
+}
+python3 - "$HERE/package/files/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    acl = json.load(handle)["luci-app-podkop-sub-sync"]
+assert acl["read"]["file"]["/usr/share/podkop-sub-sync/VERSION"] == ["read"], "LuCI version read permission missing"
+PY
+
 if command -v node >/dev/null 2>&1; then
     node --check "$LUCI_VIEW"
 fi

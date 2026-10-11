@@ -187,6 +187,10 @@ On first install the daemon starts and is enabled at boot. Subsequent updates
 preserve its previous enabled/disabled state. Save & Apply does not restart a
 disabled daemon. `--no-start` still suppresses immediate startup on first install.
 
+The service panel shows the **installed version** from
+`/usr/share/podkop-sub-sync/VERSION`, so it reflects the version deployed to
+the router rather than a hard-coded LuCI build label.
+
 ## Configuration
 
 `/etc/config/podkop-sub-sync`:

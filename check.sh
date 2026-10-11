@@ -146,6 +146,19 @@ grep -Fq 'SEC="${3:-main}"' "$PRECHECK" || {
     exit 1
 }
 
+grep -Fq "CLOUDFLARE_URL='https://cp.cloudflare.com/generate_204'" "$PRECHECK" || {
+    echo "ERROR: Cloudflare primary reachability endpoint is missing"
+    exit 1
+}
+grep -Fq 'YOUTUBE_SECOND_STAGE="$(cfg_get precheck_youtube_second_stage 0)"' "$PRECHECK" || {
+    echo "ERROR: optional YouTube second-stage precheck is missing"
+    exit 1
+}
+grep -Fq 'FAIL YT HTTP=' "$PRECHECK" || {
+    echo "ERROR: YouTube second-stage failures must be logged distinctly"
+    exit 1
+}
+
 for json in \
     "$HERE/package/files/usr/share/luci/menu.d/luci-app-podkop-sub-sync.json" \
     "$HERE/package/files/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json"
@@ -178,6 +191,23 @@ if grep -Fq ".modalonly" "$LUCI_VIEW"; then
     echo "ERROR: LuCI profile settings must be visible directly on the page"
     exit 1
 fi
+
+grep -Fq "o.value('gstatic'" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI primary check must offer GStatic"
+    exit 1
+}
+grep -Fq "o.value('cloudflare'" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI primary check must offer Cloudflare"
+    exit 1
+}
+if grep -Fq "o.value('youtube'" "$LUCI_VIEW"; then
+    echo "ERROR: YouTube must not be a primary reachability target"
+    exit 1
+fi
+grep -Fq "'precheck_youtube_second_stage'" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI YouTube second-stage toggle is missing"
+    exit 1
+}
 
 if command -v node >/dev/null 2>&1; then
     node --check "$LUCI_VIEW"

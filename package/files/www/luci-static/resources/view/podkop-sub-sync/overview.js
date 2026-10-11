@@ -269,7 +269,8 @@ return view.extend({
 				E('p', {}, _('Enabled controls each subscription; these buttons control the background daemon. Stopping does not affect Podkop or sing-box.')),
 				E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [ start, stop, status ])
 			]);
-			node.insertBefore(controls, node.firstChild);
+			// Keep controls outside the Map: renderContents() clears Map children
+			// whenever Save & Apply causes a form re-render.
 			function run(action) {
 				return fs.exec(service, [action]).then(function(result) {
 					if (result.code !== 0)
@@ -307,7 +308,7 @@ return view.extend({
 				return change('disable', 'stop', _('Background sync stopped and disabled at boot.'));
 			});
 			refresh();
-			return node;
+			return E('div', {}, [ controls, node ]);
 		});
 	},
 

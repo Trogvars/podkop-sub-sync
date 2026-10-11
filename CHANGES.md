@@ -1,5 +1,19 @@
 # CHANGES
 
+## 2.5.3
+
+### Restore version placement
+
+- Restored the original LuCI page title **Podkop Subscription Sync**.
+- Display the installed version in the **Background synchronization service**
+  panel again, as in 2.5.1.
+- Kept the 2.5.2 fix which places the service controls outside the
+  re-rendered configuration form.
+- Confirmed the stale UI in the original browser was cache-related; a different
+  browser displayed the service panel correctly.
+
+---
+
 ## 2.5.2
 
 ### LuCI version visibility

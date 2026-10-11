@@ -257,12 +257,64 @@ return view.extend({
 		o.rmempty = true;
 		o.placeholder = _('Automatic versioned default');
 
-		return m.render();
+		return m.render().then(function(node) {
+			var service = '/etc/init.d/podkop-sub-sync';
+			var status = E('span', {}, _('Checking status...'));
+			var start = E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-positive' }, _('Start service'));
+			var stop = E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-negative' }, _('Stop service'));
+			var controls = E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, _('Background synchronization service')),
+				E('p', {}, _('Enabled controls each subscription; these buttons control the background daemon. Stopping does not affect Podkop or sing-box.')),
+				E('div', { 'style': 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [ start, stop, status ])
+			]);
+			node.insertBefore(controls, node.firstChild);
+			function run(action) {
+				return fs.exec(service, [action]).then(function(result) {
+					if (result.code !== 0)
+						throw new Error('%s failed with code %s'.format(action, result.code));
+				});
+			}
+			function refresh() {
+				return Promise.all([fs.exec(service, ['status']), fs.exec(service, ['enabled'])]).then(function(results) {
+					var running = results[0].code === 0, enabled = results[1].code === 0;
+					status.textContent = _('Daemon: %s; autostart: %s').format(
+						running ? _('running') : _('stopped'), enabled ? _('enabled') : _('disabled'));
+					start.disabled = running && enabled;
+					stop.disabled = !running && !enabled;
+				}).catch(function(error) {
+					status.textContent = error.message;
+					start.disabled = false;
+					stop.disabled = false;
+				});
+			}
+			function change(first, second, success) {
+				start.disabled = true;
+				stop.disabled = true;
+				return run(first).then(function() { return run(second); }).then(function() {
+					ui.addNotification(null, E('p', {}, success), 'info');
+				}).catch(function(error) {
+					ui.addNotification(null, E('p', {}, _('Service action failed: %s').format(error.message)), 'error');
+				}).then(refresh);
+			}
+			start.addEventListener('click', function(event) {
+				event.preventDefault();
+				return change('enable', 'start', _('Background sync started and enabled at boot.'));
+			});
+			stop.addEventListener('click', function(event) {
+				event.preventDefault();
+				return change('disable', 'stop', _('Background sync stopped and disabled at boot.'));
+			});
+			refresh();
+			return node;
+		});
 	},
 
 	handleSaveApply: function(ev, mode) {
 		var restart = L.bind(function() {
-			fs.exec('/etc/init.d/podkop-sub-sync', [ 'restart' ]);
+			fs.exec('/etc/init.d/podkop-sub-sync', [ 'enabled' ]).then(function(result) {
+				if (result.code === 0)
+					return fs.exec('/etc/init.d/podkop-sub-sync', [ 'restart' ]);
+			});
 			document.removeEventListener('uci-applied', restart);
 		});
 

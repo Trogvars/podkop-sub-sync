@@ -80,6 +80,7 @@ INSECURE_TLS="$(cfg_get precheck_insecure_tls 1)"
 YOUTUBE_SECOND_STAGE="$(cfg_get precheck_youtube_second_stage 0)"
 
 GSTATIC_URL='https://www.gstatic.com/generate_204'
+CLOUDFLARE_URL='https://cp.cloudflare.com/generate_204'
 YOUTUBE_URL='https://www.youtube.com/generate_204'
 
 # Backward compatibility: infer the dropdown value from an existing precheck_url
@@ -89,8 +90,8 @@ if [ -z "$TEST_TARGET" ]; then
         ''|https://www.gstatic.com/generate_204)
             TEST_TARGET='gstatic'
             ;;
-        https://www.youtube.com/generate_204)
-            TEST_TARGET='youtube'
+        https://cp.cloudflare.com/generate_204|http://cp.cloudflare.com/generate_204)
+            TEST_TARGET='cloudflare'
             ;;
         *)
             TEST_TARGET='custom'
@@ -102,16 +103,20 @@ case "$TEST_TARGET" in
     gstatic)
         TEST_URL="$GSTATIC_URL"
         ;;
-    youtube)
-        TEST_URL="$YOUTUBE_URL"
+    cloudflare)
+        TEST_URL="$CLOUDFLARE_URL"
         ;;
     custom)
         TEST_URL="${LEGACY_TEST_URL:-$GSTATIC_URL}"
         ;;
     *)
-        die "precheck_target must be gstatic, youtube or custom"
+        die "precheck_target must be gstatic, cloudflare or custom"
         ;;
 esac
+
+if [ "$TEST_TARGET" != "custom" ]; then
+    EXPECTED_CODE='204'
+fi
 DNS_SERVER="$(uci -q get "${CFG}.${SEC}.precheck_dns_server" 2>/dev/null ||
               uci -q get podkop.settings.bootstrap_dns_server 2>/dev/null ||
               printf '%s\n' '1.1.1.1')"
@@ -328,11 +333,7 @@ trap cleanup EXIT INT TERM
 
 precheck_log "Primary check: $TEST_TARGET -> $TEST_URL"
 if [ "$YOUTUBE_SECOND_STAGE" = 1 ]; then
-    if [ "$TEST_TARGET" = "youtube" ]; then
-        precheck_log "Second-stage YouTube check: enabled, but primary target is already YouTube; duplicate request will be skipped"
-    else
-        precheck_log "Second-stage YouTube check: enabled -> $YOUTUBE_URL"
-    fi
+    precheck_log "Second-stage YouTube check: enabled -> $YOUTUBE_URL"
 else
     precheck_log "Second-stage YouTube check: disabled"
 fi
@@ -345,19 +346,12 @@ CONTROL_CODE="$(curl $CURL_TLS_OPT -sS \
     "$TEST_URL" 2>/dev/null)"
 CONTROL_RC=$?
 
-if [ "$TEST_TARGET" = "youtube" ]; then
-    if [ "$CONTROL_RC" -eq 0 ] && http_code_ok "$CONTROL_CODE"; then
-        precheck_log "Direct YouTube control check is available (HTTP $CONTROL_CODE)"
-    else
-        precheck_log "Direct YouTube control check unavailable (HTTP ${CONTROL_CODE:-000}); continuing because proxy reachability is the purpose of this test"
-    fi
-else
-    if [ "$CONTROL_RC" -ne 0 ] || ! http_code_ok "$CONTROL_CODE"; then
-        precheck_log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000}, rc=$CONTROL_RC)"
-        exit 10
-    fi
-    precheck_log "Control URL is available (HTTP $CONTROL_CODE)"
+if [ "$CONTROL_RC" -ne 0 ] || ! http_code_ok "$CONTROL_CODE"; then
+    precheck_log "ERROR: control URL check failed (HTTP ${CONTROL_CODE:-000}, rc=$CONTROL_RC)"
+    exit 10
 fi
+
+precheck_log "Control URL is available (HTTP $CONTROL_CODE)"
 
 SBE_VERSION_INFO="$(sing-box version 2>/dev/null || true)"
 MEM_TOTAL_KB="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
@@ -407,19 +401,12 @@ if { [ "$LOW_MEMORY_SBE" = 1 ] || [ "$FORCE_ISOLATED" = 1 ]; } &&
         -w '%{http_code}' \
         "$TEST_URL" 2>/dev/null)"
 
-    if [ "$TEST_TARGET" = "youtube" ]; then
-        if http_code_ok "$DIRECT_CODE"; then
-            precheck_log "Direct YouTube connectivity after stopping Podkop is available (HTTP $DIRECT_CODE)"
-        else
-            precheck_log "Direct YouTube connectivity after stopping Podkop is unavailable (HTTP ${DIRECT_CODE:-000}); continuing with proxy tests"
-        fi
-    else
-        if ! http_code_ok "$DIRECT_CODE"; then
-            precheck_log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
-            exit 13
-        fi
-        precheck_log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
+    if ! http_code_ok "$DIRECT_CODE"; then
+        precheck_log "ERROR: direct control URL check failed after stopping Podkop (HTTP ${DIRECT_CODE:-000})"
+        exit 13
     fi
+
+    precheck_log "Direct connectivity OK after stopping Podkop (HTTP $DIRECT_CODE)"
 fi
 
 TOTAL="$(wc -l <"$INPUT" | tr -d ' ')"
@@ -574,7 +561,7 @@ while [ "$START" -le "$TOTAL" ]; do
             MS="$(awk -v t="${TIME:-0}" 'BEGIN{printf "%.0f",t*1000}')"
             YOUTUBE_MS=""
 
-            if [ "$YOUTUBE_SECOND_STAGE" = 1 ] && [ "$TEST_TARGET" != "youtube" ]; then
+            if [ "$YOUTUBE_SECOND_STAGE" = 1 ]; then
                 YOUTUBE_RESULT="$(curl $CURL_TLS_OPT -sS \
                     -x "http://127.0.0.1:${PORT}" \
                     --connect-timeout "$CONNECT_TIMEOUT" \

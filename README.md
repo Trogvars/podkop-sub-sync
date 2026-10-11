@@ -187,16 +187,17 @@ On first install the daemon starts and is enabled at boot. Subsequent updates
 preserve its previous enabled/disabled state. Save & Apply does not restart a
 disabled daemon. `--no-start` still suppresses immediate startup on first install.
 
-The main LuCI heading shows **Podkop Subscription Sync vX.Y.Z**, reading the
-installed version from `/usr/share/podkop-sub-sync/VERSION` rather than
-hard-coding a release in the interface.
+The LuCI page keeps its original **Podkop Subscription Sync** heading.
+The background synchronization service panel shows **Installed version: X.Y.Z**,
+reading the installed version from `/usr/share/podkop-sub-sync/VERSION`
+rather than hard-coding a release in the interface.
 
 If the version or the Start/Stop controls are missing, check that the router
 actually has the new view file and force-refresh the browser:
 
 ```sh
 cat /usr/share/podkop-sub-sync/VERSION
-grep -n 'Podkop Subscription Sync v%s' /www/luci-static/resources/view/podkop-sub-sync/overview.js
+grep -n 'Installed version: %s' /www/luci-static/resources/view/podkop-sub-sync/overview.js
 ```
 
 Background daemon controls live outside the re-rendered form, so they remain

@@ -77,6 +77,8 @@ return view.extend({
 		s.sortable = false;
 		s.nodescriptions = true;
 		s.addbtntitle = _('Add Podkop section');
+		// Keep the overview narrow. All configuration fields are rendered
+		// vertically in the section edit modal instead of as table columns.
 
 		s.sectiontitle = function(section_id) {
 			var p = proxyTargets[section_id];
@@ -113,11 +115,11 @@ return view.extend({
 		o = s.taboption('general', form.Flag, 'enabled', _('Enabled'));
 		o.default = '0';
 		o.rmempty = false;
-		o.modalonly = false;
+		o.modalonly = true;
 		o.editable = true;
 
 		o = s.taboption('general', form.DummyValue, '_podkop_section', _('Podkop section'));
-		o.modalonly = false;
+		o.modalonly = true;
 		o.cfgvalue = function(section_id) {
 			var p = proxyTargets[section_id];
 			if (!p)
@@ -135,7 +137,7 @@ return view.extend({
 		addIntervalValues(o);
 		o.default = '86400';
 		o.rmempty = false;
-		o.modalonly = false;
+		o.modalonly = true;
 
 		o = s.taboption('general', form.ListValue, 'retry_interval', _('Retry interval'));
 		addRetryValues(o);

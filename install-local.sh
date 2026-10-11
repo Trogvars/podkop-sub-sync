@@ -455,16 +455,16 @@ for f in \
     /usr/lib/podkop-sub-sync/common.sh \
     /usr/share/podkop-sub-sync/VERSION \
     /etc/init.d/podkop-sub-sync \
-    /etc/config/podkop-sub-sync
+    /etc/config/podkop-sub-sync \
+    /www/luci-static/resources/view/podkop-sub-sync/overview.js \
+    /usr/share/luci/menu.d/luci-app-podkop-sub-sync.json \
+    /usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json
 do
     backup_if_exists "$f"
 done
 
-OLD_SYNC_ENABLED="$(uci -q get podkop-sub-sync.main.enabled 2>/dev/null || echo 0)"
-OLD_SYNC_URL="$(uci -q get podkop-sub-sync.main.url 2>/dev/null || true)"
-
 restart_old_service(){
-    if [ "$OLD_SYNC_ENABLED" = 1 ] && [ -n "$OLD_SYNC_URL" ] && [ -x /etc/init.d/podkop-sub-sync ]; then
+    if [ -x /etc/init.d/podkop-sub-sync ]; then
         /etc/init.d/podkop-sub-sync start >/dev/null 2>&1 || true
     fi
 }
@@ -526,6 +526,28 @@ chmod 755 \
 
 chmod 644 /usr/lib/podkop-sub-sync/common.sh /usr/share/podkop-sub-sync/VERSION
 
+LUCI_INSTALLED=0
+if [ -d /www/luci-static/resources ] && [ -d /usr/share/luci ]; then
+    mkdir -p \
+        /www/luci-static/resources/view/podkop-sub-sync \
+        /usr/share/luci/menu.d \
+        /usr/share/rpcd/acl.d
+
+    cp "$SRC/www/luci-static/resources/view/podkop-sub-sync/overview.js" \
+        /www/luci-static/resources/view/podkop-sub-sync/overview.js
+    cp "$SRC/usr/share/luci/menu.d/luci-app-podkop-sub-sync.json" \
+        /usr/share/luci/menu.d/luci-app-podkop-sub-sync.json
+    cp "$SRC/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json" \
+        /usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json
+
+    chmod 644 \
+        /www/luci-static/resources/view/podkop-sub-sync/overview.js \
+        /usr/share/luci/menu.d/luci-app-podkop-sub-sync.json \
+        /usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json
+
+    LUCI_INSTALLED=1
+fi
+
 if [ ! -f /etc/config/podkop-sub-sync ]; then
     cp "$SRC/etc/config/podkop-sub-sync" /etc/config/podkop-sub-sync
     chmod 600 /etc/config/podkop-sub-sync
@@ -537,7 +559,6 @@ if ! uci -q get podkop-sub-sync.main >/dev/null 2>&1; then
     uci set podkop-sub-sync.main='sync'
     uci set podkop-sub-sync.main.enabled='0'
     uci set podkop-sub-sync.main.url=''
-    uci set podkop-sub-sync.main.target='main'
     uci set podkop-sub-sync.main.interval='86400'
     uci set podkop-sub-sync.main.retry_interval='900'
     uci set podkop-sub-sync.main.send_hwid='0'
@@ -580,6 +601,20 @@ esac
 
 uci -q get podkop-sub-sync.main.retry_interval >/dev/null 2>&1 ||
     uci set podkop-sub-sync.main.retry_interval='900'
+
+# Since 2.4.0, a sync section always maps to the Podkop section with the same
+# name. Remove old no-op target=section options and warn about unusual mappings.
+for sync_sec in $(uci -q show podkop-sub-sync 2>/dev/null |
+    sed -n 's/^podkop-sub-sync\.\([A-Za-z0-9_][A-Za-z0-9_]*\)=sync$/\1/p')
+do
+    legacy_target="$(uci -q get "podkop-sub-sync.${sync_sec}.target" 2>/dev/null || true)"
+    if [ "$legacy_target" = "$sync_sec" ]; then
+        uci -q delete "podkop-sub-sync.${sync_sec}.target" || true
+    elif [ -n "$legacy_target" ]; then
+        echo "WARNING: profile $sync_sec had legacy target=$legacy_target; 2.4.0 maps it to podkop.$sync_sec"
+        uci -q delete "podkop-sub-sync.${sync_sec}.target" || true
+    fi
+done
 
 [ "$INTERVAL_SET" = 1 ] && uci set "podkop-sub-sync.main.interval=${INTERVAL}"
 [ "$MAX_NODES_SET" = 1 ] && uci set "podkop-sub-sync.main.precheck_max_nodes=${MAX_NODES}"
@@ -635,17 +670,18 @@ done
 
 /etc/init.d/podkop-sub-sync enable
 
-CONFIGURED_URL="$(uci -q get podkop-sub-sync.main.url 2>/dev/null || true)"
-CONFIG_ENABLED="$(uci -q get podkop-sub-sync.main.enabled 2>/dev/null || echo 0)"
-
 if [ "$NO_START" = 1 ]; then
     echo "Installed and enabled; not started (--no-start)."
-elif [ "$CONFIG_ENABLED" != 1 ]; then
-    echo "Installed. Sync is disabled in UCI."
-elif [ -z "$CONFIGURED_URL" ]; then
-    echo "Installed, but subscription URL is empty."
 else
     /etc/init.d/podkop-sub-sync start
+fi
+
+if [ "$LUCI_INSTALLED" = 1 ]; then
+    rm -f /tmp/luci-indexcache /tmp/luci-indexcache.* 2>/dev/null || true
+    /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+    echo "LuCI   : Services -> Podkop Subscription Sync"
+else
+    echo "LuCI base not detected; web interface files were not installed."
 fi
 
 echo "Installation complete."

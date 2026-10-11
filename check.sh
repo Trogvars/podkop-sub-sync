@@ -214,8 +214,8 @@ grep -Fq "fs.read('/usr/share/podkop-sub-sync/VERSION')" "$LUCI_VIEW" || {
     echo "ERROR: LuCI must read the installed VERSION file"
     exit 1
 }
-grep -Fq 'Installed version: %s' "$LUCI_VIEW" || {
-    echo "ERROR: LuCI installed version label is missing"
+grep -Fq "Podkop Subscription Sync v%s" "$LUCI_VIEW" || {
+    echo "ERROR: LuCI map title must contain the installed version"
     exit 1
 }
 python3 - "$HERE/package/files/usr/share/rpcd/acl.d/luci-app-podkop-sub-sync.json" <<'PY'

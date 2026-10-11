@@ -1,5 +1,18 @@
 # CHANGES
 
+## 2.4.3
+
+### LuCI vertical form
+
+- Replaced the horizontal `GridSection` table with ordinary `TypedSection`
+  blocks.
+- Every Podkop sync section is now displayed directly on the page as its own
+  vertical form.
+- All subscription, interval, protocol, country, precheck and advanced
+  settings are visible on the main page, one field below another.
+- Removed the Edit/modal-only layout; no settings are hidden behind a popup.
+
+---
 ## 2.4.2
 
 ### LuCI overview

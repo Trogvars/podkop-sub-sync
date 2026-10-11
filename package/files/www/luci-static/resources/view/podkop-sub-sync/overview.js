@@ -177,17 +177,17 @@ return view.extend({
 		o.default = '1';
 		o.rmempty = false;
 
-		o = s.option(form.Value, 'precheck_url', _('Test URL'));
-		o.default = 'https://www.gstatic.com/generate_204';
+		o = s.option(form.ListValue, 'precheck_target', _('Primary reachability check'),
+			_('Fast lightweight check used for latency and basic proxy availability.'));
+		o.value('gstatic', _('Google GStatic — https://www.gstatic.com/generate_204'));
+		o.value('cloudflare', _('Cloudflare — https://cp.cloudflare.com/generate_204'));
+		o.default = 'gstatic';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 
-		o = s.option(form.ListValue, 'precheck_http_code', _('Expected HTTP code'));
-		o.value('204', '204');
-		o.value('200', '200');
-		o.value('any', _('Any 2xx/3xx/4xx'));
-		o.editable = true;
-		o.default = '204';
+		o = s.option(form.Flag, 'precheck_youtube_second_stage', _('Second-stage YouTube check'),
+			_('After the primary check succeeds, additionally require https://www.youtube.com/generate_204 to return HTTP 204 through the same proxy. This filters nodes that have Internet access but cannot reach YouTube.'));
+		o.default = '0';
 		o.rmempty = false;
 		o.depends('precheck_enabled', '1');
 

@@ -1,5 +1,16 @@
 # CHANGES
 
+## 2.4.1
+
+### LuCI layout
+
+- Kept the subscription-section overview compact instead of rendering
+  configuration fields as horizontal table columns.
+- All profile options now open in the Edit dialog and are laid out vertically,
+  one field per row, preventing the LuCI page from overflowing horizontally
+  on narrower desktop windows and mobile screens.
+
+---
 ## 2.4.0
 
 ### LuCI and Podkop section support

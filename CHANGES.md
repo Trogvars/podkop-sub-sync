@@ -1,5 +1,24 @@
 # CHANGES
 
+## 2.5.0
+
+### Reachability precheck profiles
+
+- Added a primary reachability selector in LuCI:
+  - Google GStatic `https://www.gstatic.com/generate_204`
+  - Cloudflare `https://cp.cloudflare.com/generate_204`
+- Both built-in primary checks require HTTP 204 and are used for latency
+  measurement and fastest-node ranking.
+- Added an optional second-stage YouTube check using
+  `https://www.youtube.com/generate_204`.
+- When enabled, a node is accepted only if both the primary reachability check
+  and the YouTube check pass through the same proxy.
+- YouTube failures are logged separately as `FAIL YT`; YouTube latency is
+  informational and does not replace the primary latency ranking.
+- Existing GStatic configs migrate automatically. Legacy custom precheck URLs
+  remain supported by the backend for compatibility.
+
+---
 ## 2.4.3
 
 ### LuCI vertical form
